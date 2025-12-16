@@ -290,6 +290,8 @@ protected:
   // delays to be recomputed during incremental delay calculation.
   float incremental_delay_tolerance_;
 
+  std::vector<std::string> debug_info_;
+
   friend class FindVertexDelays;
   friend class MultiDrvrNet;
 };

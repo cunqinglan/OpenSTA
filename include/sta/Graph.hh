@@ -73,6 +73,8 @@ public:
   // Number of arc delays and slews from sdf or delay calculation.
   void setDelayCount(DcalcAPIndex ap_count);
   size_t slewCount();
+  void setLrMode(bool lr_mode) { lr_mode_ = lr_mode; }
+  void initArcLms(Edge *edge);
 
   // Vertex functions.
   // Bidirect pins have two vertices.
@@ -193,6 +195,9 @@ public:
   static constexpr int vertex_level_bits = 24;
   static constexpr int vertex_level_max = (1<<vertex_level_bits)-1;
 
+  size_t slew_rf_count() const { return slew_rf_count_; }
+  DcalcAPIndex apCount() const { return ap_count_; }
+
 protected:
   void makeVerticesAndEdges();
   Vertex *makeVertex(Pin *pin,
@@ -234,12 +239,15 @@ protected:
   PeriodCheckAnnotations *period_check_annotations_;
   // Register/latch clock vertices to search from.
   VertexSet *reg_clk_vertices_;
+  bool lr_mode_;
 
   friend class Vertex;
   friend class VertexIterator;
   friend class VertexInEdgeIterator;
   friend class VertexOutEdgeIterator;
   friend class MakeEdgesThruHierPin;
+  friend class PtGraph;
+  friend class PtEdge;
 };
 
 // Each Vertex corresponds to one network pin.
@@ -406,6 +414,11 @@ public:
   ObjectIdx objectIdx() const { return object_idx_; }
   void setObjectIdx(ObjectIdx idx);
 
+  // LR helper values for this edge.
+  LMValue* arcLms() const { return arc_lms_; }
+  void setArcLms(LMValue* arc_lms);
+  void setLrMode(bool lr_mode) {lr_mode_ = lr_mode;};
+
 protected:
   void init(VertexId from,
 	    VertexId to,
@@ -441,6 +454,8 @@ protected:
   bool is_disabled_cond_:1;
   bool is_disabled_loop_:1;
   unsigned object_idx_:VertexTable::idx_bits;
+  LMValue* arc_lms_ = nullptr;
+  bool lr_mode_ = false;
 
 private:
   friend class Graph;

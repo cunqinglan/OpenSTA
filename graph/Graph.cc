@@ -56,7 +56,8 @@ Graph::Graph(StaState *sta,
   slew_rf_count_(slew_rf_count),
   ap_count_(ap_count),
   period_check_annotations_(nullptr),
-  reg_clk_vertices_(new VertexSet(graph_))
+  reg_clk_vertices_(new VertexSet(graph_)),
+  lr_mode_(true)
 {
   // For the benifit of reg_clk_vertices_ that references graph_.
   graph_ = this;
@@ -671,7 +672,29 @@ Graph::makeEdge(Vertex *from,
   to->in_edges_ = edge_id;
 
   initArcDelays(edge);
+  if (lr_mode_) {
+    edge->setLrMode(true);
+    initArcLms(edge);
+  }
   return edge;
+}
+
+void 
+Graph::initArcLms(Edge *edge)
+{
+  size_t arc_count = edge->timingArcSet()->arcCount();
+  size_t lm_count = arc_count * ap_count_;
+  LMValue *arc_lms = new LMValue[lm_count];
+  edge->setArcLms(arc_lms);
+  for (size_t i = 0; i < lm_count; i++)
+    arc_lms[i] = 1.0;
+}
+
+void 
+Edge::setArcLms(LMValue* arc_lms)
+{
+  delete [] arc_lms_;
+  arc_lms_ = arc_lms;
 }
 
 void
@@ -1255,6 +1278,7 @@ Edge::init(VertexId from,
   is_disabled_constraint_ = false;
   is_disabled_cond_ = false;
   is_disabled_loop_ = false;
+  arc_lms_ = nullptr;
 }
 
 Edge::~Edge()

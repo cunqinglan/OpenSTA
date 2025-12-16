@@ -147,6 +147,10 @@ public:
   PinSet unannotatedLoads(const Pin *drvr_pin,
                           const Parasitics *parasitics) const override;
   void deleteLoad(const Pin *load_pin);
+  float c2() const { return c2_; }
+  float rpi() const { return rpi_; }
+  float c1() const { return c1_; }
+  const ConcreteElmoreLoadMap &loads() const { return loads_; }
 
 private:
   ConcreteElmoreLoadMap loads_;

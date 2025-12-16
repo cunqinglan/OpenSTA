@@ -1034,6 +1034,11 @@ public:
 			  const Pin *drvr,
 			  const Pin *load);
   void ensureClkHpinDisables();
+  float portCapacitance(Instance *inst,
+                        LibertyPort *port,
+			const RiseFall *rf,
+			const Corner *corner,
+			const MinMax *min_max) const;
 
 protected:
   void portMembers(const Port *port,
@@ -1244,11 +1249,6 @@ protected:
 			const RiseFall *rf,
 			const Corner *corner,
 			const MinMax *min_max);
-  float portCapacitance(Instance *inst,
-                        LibertyPort *port,
-			const RiseFall *rf,
-			const Corner *corner,
-			const MinMax *min_max) const;
   void removeClockGroups(ClockGroups *groups);
   void ensureClkGroupExclusions();
   void makeClkGroupExclusions(ClockGroups *clk_groups);

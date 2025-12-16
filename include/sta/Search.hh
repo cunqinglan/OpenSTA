@@ -217,6 +217,12 @@ public:
 			   const MinMax *min_max) const;
   PathGroup *findPathGroup(const Clock *clk,
 			   const MinMax *min_max) const;
+  virtual float timingDerate(const Vertex *from_vertex,
+			     const TimingArc *arc,
+			     const Edge *edge,
+			     bool is_clk,
+			     const PathAnalysisPt *path_ap);
+  TagGroup *findExistingTagGroup(TagGroupBldr *group_bldr);
 
   ////////////////////////////////////////////////////////////////
   //
@@ -548,11 +554,6 @@ protected:
   void findArrivalsSeed();
   void seedFilterStarts();
   bool hasEnabledChecks(Vertex *vertex) const;
-  virtual float timingDerate(const Vertex *from_vertex,
-			     const TimingArc *arc,
-			     const Edge *edge,
-			     bool is_clk,
-			     const PathAnalysisPt *path_ap);
   void deletePaths();
   // Delete with incremental tns/wns update.
   void deletePathsIncr(Vertex *vertex);
