@@ -30,6 +30,7 @@
 #include "VcdParse.hh"
 #include "Debug.hh"
 #include "Network.hh"
+#include "Liberty.hh"
 #include "PortDirection.hh"
 #include "VerilogNamespace.hh"
 #include "ParseBus.hh"
@@ -152,7 +153,7 @@ public:
                       char value) override;
   void varAppendBusValue(const string &id,
                          VcdTime time,
-                         int64_t bus_value) override;
+                         const string &bus_value) override;
 
 private:
   void addVarPin(const string &pin_name,
@@ -284,13 +285,16 @@ VcdCountReader::addVarPin(const string &pin_name,
                           size_t bit_idx)
 {
   const Pin *pin = sdc_network_->findPin(pin_name.c_str());
+  LibertyPort *liberty_port = pin ? sdc_network_->libertyPort(pin) : nullptr;
   if (pin
       && !sdc_network_->isHierarchical(pin)
-      && !sdc_network_->direction(pin)->isInternal()) {
+      && !sdc_network_->direction(pin)->isInternal()
+      && !sdc_network_->direction(pin)->isPowerGround()
+      && !(liberty_port && liberty_port->isPwrGnd())) {
     VcdCounts &vcd_counts = vcd_count_map_[id];
     vcd_counts.resize(width);
     vcd_counts[bit_idx].addPin(pin);
-    debugPrint(debug_, "read_vcd_activities", 2, "id %s pin %s",
+    debugPrint(debug_, "read_vcd", 2, "id %s pin %s",
                id.c_str(),
                pin_name.c_str());
   }
@@ -304,11 +308,11 @@ VcdCountReader::varAppendValue(const string &id,
   const auto &itr = vcd_count_map_.find(id);
   if (itr != vcd_count_map_.end()) {
     VcdCounts &vcd_counts = itr->second;
-    if (debug_->check("read_vcd_activities", 3)) {
+    if (debug_->check("read_vcd", 3)) {
       for (size_t bit_idx = 0; bit_idx < vcd_counts.size(); bit_idx++) {
         VcdCount &vcd_count = vcd_counts[bit_idx];
         for (const Pin *pin : vcd_count.pins()) {
-          debugPrint(debug_, "read_vcd_activities", 3, "%s time %" PRIu64 " value %c",
+          debugPrint(debug_, "read_vcd", 3, "%s time %" PRIu64 " value %c",
                      sdc_network_->pathName(pin),
                      time,
                      value);
@@ -325,23 +329,29 @@ VcdCountReader::varAppendValue(const string &id,
 void
 VcdCountReader::varAppendBusValue(const string &id,
                                   VcdTime time,
-                                  int64_t bus_value)
+                                  const string &bus_value)
 {
   const auto &itr = vcd_count_map_.find(id);
   if (itr != vcd_count_map_.end()) {
     VcdCounts &vcd_counts = itr->second;
     for (size_t bit_idx = 0; bit_idx < vcd_counts.size(); bit_idx++) {
-      char bit_value = ((bus_value >> bit_idx) & 0x1) ? '1' : '0';
+      char bit_value;
+      if (bus_value.size() == 1)
+        bit_value = bus_value[0];
+      else if  (bit_idx < bus_value.size())
+        bit_value = bus_value[bit_idx];
+      else
+        bit_value = '0';
       VcdCount &vcd_count = vcd_counts[bit_idx];
-      if (debug_->check("read_vcd_activities", 3)) {
+      vcd_count.incrCounts(time, bit_value);
+      if (debug_->check("read_vcd", 3)) {
         for (const Pin *pin : vcd_count.pins()) {
-          debugPrint(debug_, "read_vcd_activities", 3, "%s time %" PRIu64 " value %c",
+          debugPrint(debug_, "read_vcd", 3, "%s time %" PRIu64 " value %c",
                      sdc_network_->pathName(pin),
                      time,
                      bit_value);
         }
       }
-      vcd_count.incrCounts(time, bit_value);
     }
   }
 }
@@ -396,7 +406,7 @@ ReadVcdActivities::readActivities()
 {
   ClockSeq *clks = sdc_->clocks();
   if (clks->empty())
-    report_->error(805, "No clocks have been defined.");
+    report_->error(820, "No clocks have been defined.");
 
   vcd_parse_.read(filename_, &vcd_reader_);
 
@@ -420,9 +430,9 @@ ReadVcdActivities::setActivities()
       VcdTime high_time = vcd_count.highTime(time_max);
       float duty = static_cast<double>(high_time) / time_delta;
       float density = transition_count / (time_delta * time_scale);
-      if (debug_->check("read_vcd_activities", 1)) {
+      if (debug_->check("read_vcd", 1)) {
         for (const Pin *pin : vcd_count.pins()) {
-          debugPrint(debug_, "read_vcd_activities", 1,
+          debugPrint(debug_, "read_vcd", 1,
                      "%s transitions %.1f activity %.2f duty %.2f",
                      sdc_network_->pathName(pin),
                      transition_count,
@@ -444,20 +454,26 @@ void
 ReadVcdActivities::checkClkPeriod(const Pin *pin,
                                   double transition_count)
 {
-  VcdTime time_max = vcd_reader_.timeMax();
-  VcdTime time_min = vcd_reader_.timeMin();
-  double time_scale = vcd_reader_.timeScale();
-  double sim_period = (time_max - time_min) * time_scale / (transition_count / 2.0);
   ClockSet *clks = sdc_->findLeafPinClocks(pin);
   if (clks) {
+    VcdTime time_max = vcd_reader_.timeMax();
+    VcdTime time_min = vcd_reader_.timeMin();
+    double time_scale = vcd_reader_.timeScale();
+    double sim_period = (time_max - time_min) * time_scale / (transition_count / 2.0);
     for (Clock *clk : *clks) {
-      double clk_period = clk->period();
-      if (abs((clk_period - sim_period) / clk_period) > sim_clk_period_tolerance_)
-        // Warn if sim clock period differs from SDC by more than 10%.
-        report_->warn(1452, "clock %s vcd period %s differs from SDC clock period %s",
+      if (transition_count == 0)
+        report_->warn(1452, "clock %s pin %s has no vcd transitions.",
                       clk->name(),
-                      delayAsString(sim_period, this),
-                      delayAsString(clk_period, this));
+                      sdc_network_->pathName(pin));
+      else {
+        double clk_period = clk->period();
+        if (abs((clk_period - sim_period) / clk_period) > sim_clk_period_tolerance_)
+          // Warn if sim clock period differs from SDC by more than 10%.
+          report_->warn(1453, "clock %s vcd period %s differs from SDC clock period %s",
+                        clk->name(),
+                        delayAsString(sim_period, this),
+                        delayAsString(clk_period, this));
+      }
     }
   }
 }

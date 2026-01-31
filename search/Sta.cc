@@ -75,7 +75,6 @@
 #include "ClkLatency.hh"
 #include "FindRegister.hh"
 #include "ReportPath.hh"
-#include "VisitPathGroupVertices.hh"
 #include "Genclks.hh"
 #include "ClkNetwork.hh"
 #include "power/Power.hh"
@@ -210,16 +209,19 @@ StaSimObserver::fanoutEdgesChangeAfter(Vertex *vertex)
 class StaLevelizeObserver : public LevelizeObserver
 {
 public:
-  StaLevelizeObserver(Search *search);
+  StaLevelizeObserver(Search *search, GraphDelayCalc *graph_delay_calc);
   void levelsChangedBefore() override;
   void levelChangedBefore(Vertex *vertex) override;
 
 private:
   Search *search_;
+  GraphDelayCalc *graph_delay_calc_;
 };
 
-StaLevelizeObserver::StaLevelizeObserver(Search *search) :
-  search_(search)
+StaLevelizeObserver::StaLevelizeObserver(Search *search,
+                                         GraphDelayCalc *graph_delay_calc) :
+  search_(search),
+  graph_delay_calc_(graph_delay_calc)
 {
 }
 
@@ -227,12 +229,14 @@ void
 StaLevelizeObserver::levelsChangedBefore()
 {
   search_->levelsChangedBefore();
+  graph_delay_calc_->levelsChangedBefore();
 }
 
 void
 StaLevelizeObserver::levelChangedBefore(Vertex *vertex)
 {
   search_->levelChangedBefore(vertex);
+  graph_delay_calc_->levelChangedBefore(vertex);
 }
 
 ////////////////////////////////////////////////////////////////
@@ -311,6 +315,8 @@ Sta::makeComponents()
   makeSdcNetwork();
   makeReportPath();
   makePower();
+  makeClkSkews();
+
   setCmdNamespace1(CmdNamespace::sdc);
   setThreadCount1(defaultThreadCount());
   updateComponentsState();
@@ -325,7 +331,7 @@ Sta::makeObservers()
 {
   graph_delay_calc_->setObserver(new StaDelayCalcObserver(search_));
   sim_->setObserver(new StaSimObserver(graph_delay_calc_, levelize_, search_));
-  levelize_->setObserver(new StaLevelizeObserver(search_));
+  levelize_->setObserver(new StaLevelizeObserver(search_, graph_delay_calc_));
 }
 
 int
@@ -372,8 +378,7 @@ Sta::updateComponentsState()
   if (check_timing_)
     check_timing_->copyState(this);
   clk_network_->copyState(this);
-  if (clk_skews_)
-    clk_skews_->copyState(this);
+  clk_skews_->copyState(this);
   if (power_)
     power_->copyState(this);
 }
@@ -591,6 +596,7 @@ Sta::clear()
     check_min_pulse_widths_->clear();
   if (check_min_periods_)
     check_min_periods_->clear();
+  clk_skews_->clear();
   delete graph_;
   graph_ = nullptr;
   current_instance_ = nullptr;
@@ -612,6 +618,7 @@ Sta::networkChanged()
     check_min_pulse_widths_->clear();
   if (check_min_periods_)
     check_min_periods_->clear();
+  clk_skews_->clear();
   delete graph_;
   graph_ = nullptr;
   graph_sdc_annotated_ = false;
@@ -1112,6 +1119,7 @@ Sta::makeClock(const char *name,
   sdc_->makeClock(name, pins, add_to_pins, period, waveform, comment);
   update_genclks_ = true;
   search_->arrivalsInvalid();
+  power_->activitiesInvalid();
 }
 
 void
@@ -1136,6 +1144,7 @@ Sta::makeGeneratedClock(const char *name,
 			   edges, edge_shifts, comment);
   update_genclks_ = true;
   search_->arrivalsInvalid();
+  power_->activitiesInvalid();
 }
 
 void
@@ -1143,6 +1152,7 @@ Sta::removeClock(Clock *clk)
 {
   sdc_->removeClock(clk);
   search_->arrivalsInvalid();
+  power_->activitiesInvalid();
 }
 
 bool
@@ -1820,6 +1830,7 @@ Sta::setLogicValue(Pin *pin,
   sdc_->setLogicValue(pin, value);
   // Levelization respects constant disabled edges.
   levelize_->invalid();
+  power_->activitiesInvalid();
   sim_->constantsInvalid();
   // Constants disable edges which isolate downstream vertices of the
   // graph from the delay calculator's BFS search.  This means that
@@ -1835,6 +1846,7 @@ Sta::setCaseAnalysis(Pin *pin,
 		     LogicValue value)
 {
   sdc_->setCaseAnalysis(pin, value);
+  power_->activitiesInvalid();
   // Levelization respects constant disabled edges.
   levelize_->invalid();
   sim_->constantsInvalid();
@@ -2477,6 +2489,7 @@ Sta::findPathEnds(ExceptionFrom *from,
 		  bool clk_gating_hold)
 {
   searchPreamble();
+  clk_skews_->clear();
   return search_->findPathEnds(from, thrus, to, unconstrained,
 			       corner, min_max, group_path_count,
 			       endpoint_path_count,
@@ -2624,8 +2637,9 @@ float
 Sta::findWorstClkSkew(const SetupHold *setup_hold,
                       bool include_internal_latency)
 {
+
   clkSkewPreamble();
-  return clk_skews_->findWorstClkSkew(cmd_corner_, setup_hold,
+  return clk_skews_->findWorstClkSkew(nullptr, setup_hold,
                                       include_internal_latency);
 }
 
@@ -2633,8 +2647,12 @@ void
 Sta::clkSkewPreamble()
 {
   ensureClkArrivals();
-  if (clk_skews_ == nullptr)
-    clk_skews_ = new ClkSkews(this);
+}
+
+void
+Sta::makeClkSkews()
+{
+  clk_skews_ = new ClkSkews(this);
 }
 
 ////////////////////////////////////////////////////////////////
@@ -2719,36 +2737,6 @@ Sta::endpointViolationCount(const MinMax *min_max)
       violations++;
   }
   return violations;
-}
-
-PinSet
-Sta::findGroupPathPins(const char *group_path_name)
-{
-  if (!(search_->havePathGroups()
-        && search_->arrivalsValid())) {
-    PathEndSeq path_ends = findPathEnds(// from, thrus, to, unconstrained
-                                        nullptr, nullptr, nullptr, false,
-                                        // corner, min_max, 
-                                        nullptr, MinMaxAll::max(),
-                                        // group_path_count, endpoint_path_count
-                                        1, 1,
-					// unique_pins, unique_edges
-					true, true,
-                                        -INF, INF, // slack_min, slack_max,
-                                        false, // sort_by_slack
-                                        nullptr, // group_names
-                                        // setup, hold, recovery, removal, 
-                                        true, true, true, true,
-                                        // clk_gating_setup, clk_gating_hold
-                                        true, true);
-  }
-
-  PathGroup *path_group = search_->findPathGroup(group_path_name,
-						 MinMax::max());
-  PinSet pins(network_);
-  VertexPinCollector visitor(pins);
-  visitPathGroupVertices(path_group, &visitor, this);
-  return pins;
 }
 
 ////////////////////////////////////////////////////////////////
@@ -4257,6 +4245,7 @@ Sta::makeInstanceAfter(const Instance *inst)
         }
       }
       graph_->makeInstanceEdges(inst);
+      power_->powerInvalid();
     }
   }
 }
@@ -4303,7 +4292,8 @@ Sta::replaceEquivCellBefore(const Instance *inst,
         else {
           // Force delay calculation on output pins.
           Vertex *vertex = graph_->pinDrvrVertex(pin);
-          graph_delay_calc_->delayInvalid(vertex);
+	  if (vertex)
+	    graph_delay_calc_->delayInvalid(vertex);
         }
       }
     }
@@ -4322,6 +4312,8 @@ Sta::replaceEquivCellAfter(const Instance *inst)
 	parasitics_->loadPinCapacitanceChanged(pin);
     }
     delete pin_iter;
+    clk_skews_->clear();
+    power_->powerInvalid();
   }
 }
 
@@ -4456,6 +4448,8 @@ Sta::connectPinAfter(const Pin *pin)
   }
   sdc_->connectPinAfter(pin);
   sim_->connectPinAfter(pin);
+  clk_skews_->clear();
+  power_->powerInvalid();
 }
 
 void
@@ -4507,7 +4501,6 @@ Sta::disconnectPinBefore(const Pin *pin)
              sdc_network_->pathName(pin),
              sdc_network_->pathName(network_->net(pin)));
   parasitics_->disconnectPinBefore(pin, network_);
-  sdc_->disconnectPinBefore(pin);
   sim_->disconnectPinBefore(pin);
   if (graph_) {
     if (network_->isDriver(pin)) {
@@ -4547,6 +4540,8 @@ Sta::disconnectPinBefore(const Pin *pin)
 	}
       }
     }
+    clk_skews_->clear();
+    power_->powerInvalid();
   }
 }
 
@@ -4591,6 +4586,8 @@ Sta::deleteNetBefore(const Net *net)
     delete pin_iter;
   }
   sdc_->deleteNetBefore(net);
+  clk_skews_->clear();
+  power_->powerInvalid();
 }
 
 void
@@ -4618,6 +4615,8 @@ Sta::deleteLeafInstanceBefore(const Instance *inst)
 {
   sim_->deleteInstanceBefore(inst);
   sdc_->deleteInstanceBefore(inst);
+  clk_skews_->clear();
+  power_->powerInvalid();
 }
 
 void
@@ -4692,6 +4691,7 @@ Sta::deletePinBefore(const Pin *pin)
       }
     }
   }
+  sdc_->deletePinBefore(pin);
   sim_->deletePinBefore(pin);
   clk_network_->deletePinBefore(pin);
 }
@@ -5264,8 +5264,8 @@ Sta::slowDrivers(int count)
 {
   findDelays();
   InstanceSeq insts = network_->leafInstances();
-  sort(insts, [=] (const Instance *inst1,
-                   const Instance *inst2) {
+  sort(insts, [this] (const Instance *inst1,
+                      const Instance *inst2) {
     return delayGreater(instMaxSlew(inst1, this),
                         instMaxSlew(inst2, this),
                         this);

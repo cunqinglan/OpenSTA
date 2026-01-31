@@ -43,6 +43,7 @@
 #include "Path.hh"
 #include "DcalcAnalysisPt.hh"
 #include "Bdd.hh"
+#include "cudd.h"
 
 namespace sta {
 
@@ -261,7 +262,7 @@ WriteSpice::recordSpicePortNames(const char *cell_name,
     for (size_t i = 2; i < tokens.size(); i++) {
       const char *port_name = tokens[i].c_str();
       LibertyPort *port = cell->findLibertyPort(port_name);
-      LibertyPgPort *pg_port = cell->findPgPort(port_name);
+      LibertyPort *pg_port = cell->findLibertyPort(port_name);
       if (port == nullptr
 	  && pg_port == nullptr
 	  && !stringEqual(port_name, power_name_)
@@ -326,7 +327,7 @@ WriteSpice::writeSubcktInst(const Instance *inst)
   for (string subckt_port_name : spice_port_names) {
     const char *subckt_port_cname = subckt_port_name.c_str();
     Pin *pin = network_->findPin(inst, subckt_port_cname);
-    LibertyPgPort *pg_port = cell->findPgPort(subckt_port_cname);
+    LibertyPort *pg_port = cell->findLibertyPort(subckt_port_cname);
     const char *pin_name;
     if (pin) {
       pin_name = network_->pathName(pin);
@@ -357,13 +358,13 @@ WriteSpice::writeSubcktInstVoltSrcs(const Instance *inst,
     const char *subckt_port_name = subckt_port_sname.c_str();
     LibertyPort *port = cell->findLibertyPort(subckt_port_name);
     const Pin *pin = port ? network_->findPin(inst, port) : nullptr;
-    LibertyPgPort *pg_port = cell->findPgPort(subckt_port_name);
+    bool is_pg_port = port && port->isPwrGnd();
     debugPrint(debug_, "write_spice", 2, " port %s%s",
                subckt_port_name,
-               pg_port ? " pwr/gnd" : "");
-    if (pg_port)
+               is_pg_port ? " pwr/gnd" : "");
+    if (is_pg_port)
       writeVoltageSource(inst_name, subckt_port_name,
-			 pgPortVoltage(pg_port));
+			 pgPortVoltage(port));
     else if (stringEq(subckt_port_name, power_name_))
       writeVoltageSource(inst_name, subckt_port_name, power_voltage_);
     else if (stringEq(subckt_port_name, gnd_name_))
@@ -420,7 +421,7 @@ WriteSpice::writeVoltageSource(LibertyCell *cell,
                                float voltage)
 {
   if (pg_port_name) {
-    LibertyPgPort *pg_port = cell->findPgPort(pg_port_name);
+    LibertyPort *pg_port = cell->findLibertyPort(pg_port_name);
     if (pg_port)
       voltage = pgPortVoltage(pg_port);
     else
@@ -433,9 +434,9 @@ WriteSpice::writeVoltageSource(LibertyCell *cell,
 }
 
 float
-WriteSpice::pgPortVoltage(LibertyPgPort *pg_port)
+WriteSpice::pgPortVoltage(LibertyPort *pg_port)
 {
-  LibertyLibrary *liberty = pg_port->cell()->libertyLibrary();
+  LibertyLibrary *liberty = pg_port->libertyCell()->libertyLibrary();
   float voltage = 0.0;
   bool exists;
   const char *voltage_name = pg_port->voltageName();
@@ -448,14 +449,14 @@ WriteSpice::pgPortVoltage(LibertyPgPort *pg_port)
 	voltage = gnd_voltage_;
       else
 	report_->error(1601 , "pg_pin %s/%s voltage %s not found,",
-		       pg_port->cell()->name(),
+		       pg_port->libertyCell()->name(),
 		       pg_port->name(),
 		       voltage_name);
     }
   }
   else
     report_->error(1602, "Liberty pg_port %s/%s missing voltage_name attribute,",
-		   pg_port->cell()->name(),
+		   pg_port->libertyCell()->name(),
 		   pg_port->name());
   return voltage;
 }
@@ -533,8 +534,8 @@ WriteSpice::writeParasiticNetwork(const Pin *drvr_pin,
   // Sort resistors for consistent regression results.
   ParasiticResistorSeq resistors = parasitics_->resistors(parasitic);
   sort(resistors.begin(), resistors.end(),
-       [=] (const ParasiticResistor *r1,
-            const ParasiticResistor *r2) {
+       [this] (const ParasiticResistor *r1,
+               const ParasiticResistor *r2) {
          return parasitics_->id(r1) < parasitics_->id(r2);
        });
   for (ParasiticResistor *resistor : resistors) {
@@ -577,8 +578,8 @@ WriteSpice::writeParasiticNetwork(const Pin *drvr_pin,
   // Sort nodes for consistent regression results.
   ParasiticNodeSeq nodes = parasitics_->nodes(parasitic);
   sort(nodes.begin(), nodes.end(),
-       [=] (const ParasiticNode *node1,
-            const ParasiticNode *node2) {
+       [this] (const ParasiticNode *node1,
+               const ParasiticNode *node2) {
          const char *name1 = parasitics_->name(node1);
          const char *name2 = parasitics_->name(node2);
          return stringLess(name1, name2);
@@ -598,8 +599,8 @@ WriteSpice::writeParasiticNetwork(const Pin *drvr_pin,
   // Sort coupling capacitors for consistent regression results.
   ParasiticCapacitorSeq capacitors = parasitics_->capacitors(parasitic);
   sort(capacitors.begin(), capacitors.end(),
-       [=] (const ParasiticCapacitor *c1,
-            const ParasiticCapacitor *c2) {
+       [this] (const ParasiticCapacitor *c1,
+               const ParasiticCapacitor *c2) {
          return parasitics_->id(c1) < parasitics_->id(c2);
        });
   const Net *net = pinNet(drvr_pin, network_);
@@ -850,8 +851,6 @@ WriteSpice::gatePortValues(const Pin *input_pin,
   }
 }
 
-#if CUDD
-
 void
 WriteSpice::gatePortValues(const Instance *,
                            const FuncExpr *expr,
@@ -894,104 +893,6 @@ WriteSpice::gatePortValues(const Instance *,
   Cudd_Ref(diff);
   bdd_.clearVarMap();
 }
-
-#else
-
-void
-WriteSpice::gatePortValues(const Instance *inst,
-                           const FuncExpr *expr,
-                           const LibertyPort *input_port,
-                           // Return values.
-                           LibertyPortLogicValues &port_values)
-{
-  FuncExpr *left = expr->left();
-  FuncExpr *right = expr->right();
-  switch (expr->op()) {
-  case FuncExpr::op_port:
-    break;
-  case FuncExpr::op_not:
-    gatePortValues(inst, left, input_port, port_values);
-    break;
-  case FuncExpr::op_or:
-    if (left->hasPort(input_port)
-	&& right->op() == FuncExpr::op_port) {
-      gatePortValues(inst, left, input_port, port_values);
-      port_values[right->port()] = LogicValue::zero;
-    }
-    else if (left->hasPort(input_port)
-	     && right->op() == FuncExpr::op_not
-	     && right->left()->op() == FuncExpr::op_port) {
-      // input_port + !right_port
-      gatePortValues(inst, left, input_port, port_values);
-      port_values[right->left()->port()] = LogicValue::one;
-    }
-    else if (right->hasPort(input_port)
-	     && left->op() == FuncExpr::op_port) {
-      gatePortValues(inst, right, input_port, port_values);
-      port_values[left->port()] = LogicValue::zero;
-    }
-    else if (right->hasPort(input_port)
-	     && left->op() == FuncExpr::op_not
-	     && left->left()->op() == FuncExpr::op_port) {
-      // input_port + !left_port
-      gatePortValues(inst, right, input_port, port_values);
-      port_values[left->left()->port()] = LogicValue::one;
-    }
-    else {
-      gatePortValues(inst, left, input_port, port_values);
-      gatePortValues(inst, right, input_port, port_values);
-    }
-    break;
-  case FuncExpr::op_and:
-    if (left->hasPort(input_port)
-	&& right->op() == FuncExpr::op_port) {
-      gatePortValues(inst, left, input_port, port_values);
-      port_values[right->port()] = LogicValue::one;
-    }
-    else if (left->hasPort(input_port)
-	     && right->op() == FuncExpr::op_not
-	     && right->left()->op() == FuncExpr::op_port) {
-      // input_port * !right_port
-      gatePortValues(inst, left, input_port, port_values);
-      port_values[right->left()->port()] = LogicValue::zero;
-    }
-    else if (right->hasPort(input_port)
-	     && left->op() == FuncExpr::op_port) {
-      gatePortValues(inst, right, input_port, port_values);
-      port_values[left->port()] = LogicValue::one;
-    }
-    else if (right->hasPort(input_port)
-	     && left->op() == FuncExpr::op_not
-	     && left->left()->op() == FuncExpr::op_port) {
-      // input_port * !left_port
-      gatePortValues(inst, right, input_port, port_values);
-      port_values[left->left()->port()] = LogicValue::zero;
-    }
-    else {
-      gatePortValues(inst, left, input_port, port_values);
-      gatePortValues(inst, right, input_port, port_values);
-    }
-    break;
-  case FuncExpr::op_xor:
-    // Need to know timing arc sense to get this right.
-    if (left->port() == input_port
-	&& right->op() == FuncExpr::op_port)
-      port_values[right->port()] = LogicValue::zero;
-    else if (right->port() == input_port
-	     && left->op() == FuncExpr::op_port)
-      port_values[left->port()] = LogicValue::zero;
-    else {
-      gatePortValues(inst, left, input_port, port_values);
-      gatePortValues(inst, right, input_port, port_values);
-    }
-    break;
-  case FuncExpr::op_one:
-  case FuncExpr::op_zero:
-    break;
-  }
-}
-
-#endif
 
 void
 WriteSpice::regPortValues(const Pin *input_pin,

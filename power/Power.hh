@@ -76,6 +76,7 @@ class Power : public StaState
 public:
   Power(StaState *sta);
   void clear();
+  void activitiesInvalid();
   void power(const Corner *corner,
 	     // Return values.
 	     PowerResult &total,
@@ -110,6 +111,7 @@ public:
   float leakagePower(const Instance *inst,
                     LibertyCell *cell,
                     const Corner *corner);
+  void powerInvalid();
 
 protected:
   PwrActivity &activity(const Pin *pin);
@@ -132,6 +134,8 @@ protected:
 		   PwrActivity &activity);
   PwrActivity findActivity(const Pin *pin);
 
+  void ensureInstPowers(const Corner *corner);
+  void findInstPowers(const Corner *corner);
   PowerResult power(const Instance *inst,
                     LibertyCell *cell,
                     const Corner *corner);
@@ -189,6 +193,10 @@ protected:
 			       bool invert);
   void seedRegOutputActivities(const Instance *inst,
 			       BfsFwdIterator &bfs);
+  void seedRegOutputActivities(const Instance *inst,
+                               const LibertyCell *test_cell,
+                               const SequentialSeq &seqs,
+                               BfsFwdIterator &bfs);
   PwrActivity evalActivity(FuncExpr *expr,
 			   const Instance *inst);
   PwrActivity evalActivity(FuncExpr *expr,
@@ -232,6 +240,9 @@ private:
   PwrSeqActivityMap seq_activity_map_;
   bool activities_valid_;
   Bdd bdd_;
+  std::map<const Instance*, PowerResult, InstanceIdLess> instance_powers_;
+  bool instance_powers_valid_;
+  const Corner *corner_;
 
   static constexpr int max_activity_passes_ = 100;
 

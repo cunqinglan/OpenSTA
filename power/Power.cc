@@ -100,7 +100,10 @@ Power::Power(StaState *sta) :
   input_activity_(),            // default set in ensureActivities()
   seq_activity_map_(100, SeqPinHash(network_), SeqPinEqual()),
   activities_valid_(false),
-  bdd_(sta)
+  bdd_(sta),
+  instance_powers_(InstanceIdLess(network_)),
+  instance_powers_valid_(false),
+  corner_(nullptr)
 {
 }
 
@@ -113,6 +116,15 @@ Power::clear()
   seq_activity_map_.clear();
   activity_map_.clear();
   activities_valid_ = false;
+  instance_powers_.clear();
+  corner_ = nullptr;
+}
+
+void
+Power::activitiesInvalid()
+{
+  activities_valid_ = false;
+  instance_powers_valid_ = false;
 }
 
 void
@@ -120,14 +132,14 @@ Power::setGlobalActivity(float density,
 			 float duty)
 {
   global_activity_.set(density, duty, PwrActivityOrigin::global);
-  activities_valid_ = false;
+  activitiesInvalid();
 }
   
 void
 Power::unsetGlobalActivity()
 {
   global_activity_.init();
-  activities_valid_ = false;
+  activitiesInvalid();
 }
 
 void
@@ -135,14 +147,14 @@ Power::setInputActivity(float density,
 			float duty)
 {
   input_activity_.set(density, duty, PwrActivityOrigin::input);
-  activities_valid_ = false;
+  activitiesInvalid();
 }
 
 void
 Power::unsetInputActivity()
 {
   input_activity_.init();
-  activities_valid_ = false;
+  activitiesInvalid();
 }
 
 void
@@ -154,7 +166,7 @@ Power::setInputPortActivity(const Port *input_port,
   const Pin *pin = network_->findPin(top_inst, input_port);
   if (pin) {
     user_activity_map_[pin] = {density, duty, PwrActivityOrigin::user};
-    activities_valid_ = false;
+    activitiesInvalid();
   }
 }
 
@@ -165,7 +177,7 @@ Power::unsetInputPortActivity(const Port *input_port)
   const Pin *pin = network_->findPin(top_inst, input_port);
   if (pin) {
     user_activity_map_.erase(pin);
-    activities_valid_ = false;
+    activitiesInvalid();
   }
 }
 
@@ -176,14 +188,14 @@ Power::setUserActivity(const Pin *pin,
                        PwrActivityOrigin origin)
 {
   user_activity_map_[pin] = {density, duty, origin};
-  activities_valid_ = false;
+  activitiesInvalid();
 }
 
 void
 Power::unsetUserActivity(const Pin *pin)
 {
   user_activity_map_.erase(pin);
-  activities_valid_ = false;
+  activitiesInvalid();
 }
 
 PwrActivity &
@@ -230,7 +242,7 @@ Power::setSeqActivity(const Instance *reg,
 		      PwrActivity &activity)
 {
   seq_activity_map_[SeqPin(reg, output)] = activity;
-  activities_valid_ = false;
+  activitiesInvalid();
 }
 
 bool
@@ -286,13 +298,10 @@ Power::power(const Corner *corner,
   pad.clear();
 
   ensureActivities();
-  Stats stats(debug_, report_);
-  LeafInstanceIterator *inst_iter = network_->leafInstanceIterator();
-  while (inst_iter->hasNext()) {
-    Instance *inst = inst_iter->next();
+  ensureInstPowers(corner);
+  for (auto [inst, inst_power] : instance_powers_) {
     LibertyCell *cell = network_->libertyCell(inst);
     if (cell) {
-      PowerResult inst_power = power(inst, cell, corner);
       if (cell->isMacro()
 	  || cell->isMemory()
           || cell->interfaceTiming())
@@ -308,8 +317,6 @@ Power::power(const Corner *corner,
       total.incr(inst_power);
     }
   }
-  delete inst_iter;
-  stats.report("Find power");
 }
 
 bool
@@ -332,17 +339,15 @@ PowerResult
 Power::power(const Instance *inst,
 	     const Corner *corner)
 {
+  ensureActivities();
+  ensureInstPowers(corner);
   if (network_->isHierarchical(inst)) {
     PowerResult result;
     powerInside(inst, corner, result);
     return result;
   }
-  LibertyCell *cell = network_->libertyCell(inst);
-  if (cell) {
-    ensureActivities();
-    return power(inst, cell, corner);
-  }
-  return PowerResult();
+  else
+    return instance_powers_[inst];
 }
 
 void
@@ -355,13 +360,8 @@ Power::powerInside(const Instance *hinst,
     Instance *child = child_iter->next();
     if (network_->isHierarchical(child))
       powerInside(child, corner, result);
-    else {
-      LibertyCell *cell = network_->libertyCell(child);
-      if (cell) {
-        PowerResult inst_power = power(child, cell, corner);
-        result.incr(inst_power);
-      }
-    }
+    else
+      result.incr(instance_powers_[child]);
   }
   delete child_iter;
 }
@@ -491,12 +491,15 @@ PropActivityVisitor::visit(Vertex *vertex)
     if (network_->isDriver(pin)) {
       LibertyPort *port = network_->libertyPort(pin);
       if (port) {
-        LibertyCell *test_cell = port->libertyCell()->testCell();
-        if (test_cell)
-          port = test_cell->findLibertyPort(port->name());
-      }
-      if (port) {
 	FuncExpr *func = port->function();
+        if (func == nullptr) {
+          LibertyCell *test_cell = port->libertyCell()->testCell();
+          if (test_cell) {
+            port = test_cell->findLibertyPort(port->name());
+            if (port)
+              func = port->function();
+          }
+        }
 	if (func) {
           PwrActivity activity = power_->evalActivity(func, inst);
 	  changed = setActivityCheck(pin, activity);
@@ -692,8 +695,8 @@ Power::evalBddActivity(DdNode *bdd,
       Cudd_RecursiveDeref(bdd_.cuddMgr(), diff);
       float var_density = var_activity.density() * diff_duty;
       density += var_density;
-      debugPrint(debug_, "power_activity", 3, "var %s %.3e * %.3f = %.3e",
-                 port->name(),
+      debugPrint(debug_, "power_activity", 3, "%s %.3e * %.3f = %.3e",
+                 network_->pathName(pin),
                  var_activity.density(),
                  diff_duty,
                  var_density);
@@ -707,10 +710,10 @@ Power::evalBddActivity(DdNode *bdd,
 void
 Power::ensureActivities()
 {
-  // No need to propagate activites if global activity is set.
-  if (!global_activity_.isSet()) {
-    if (!activities_valid_) {
-      Stats stats(debug_, report_);
+  Stats stats(debug_, report_);
+  if (!activities_valid_) {
+    // No need to propagate activites if global activity is set.
+    if (!global_activity_.isSet()) {
       // Clear existing activities.
       activity_map_.clear();
       seq_activity_map_.clear();
@@ -746,10 +749,10 @@ Power::ensureActivities()
                    pass, visitor.maxChange());
         pass++;
       }
-      stats.report("Find power activities");
-      activities_valid_ = true;
     }
+    activities_valid_ = true;
   }
+  stats.report("Power activities");
 }
 
 void
@@ -778,10 +781,24 @@ Power::seedRegOutputActivities(const Instance *inst,
 			       BfsFwdIterator &bfs)
 {
   LibertyCell *cell = network_->libertyCell(inst);
-  LibertyCell *test_cell = cell->testCell();
-  const SequentialSeq &seqs = test_cell
-    ? test_cell->sequentials()
-    : cell->sequentials();
+  const SequentialSeq &seqs = cell->sequentials();
+  if (!seqs.empty())
+    seedRegOutputActivities(inst, nullptr, seqs, bfs);
+  else {
+    LibertyCell *test_cell = cell->testCell();
+    if (test_cell) {
+      const SequentialSeq &seqs = test_cell->sequentials();
+      seedRegOutputActivities(inst, test_cell, seqs, bfs);
+    }
+  }
+}
+
+void
+Power::seedRegOutputActivities(const Instance *inst,
+                               const LibertyCell *test_cell,
+                               const SequentialSeq &seqs,
+                               BfsFwdIterator &bfs)
+{
   for (Sequential *seq : seqs) {
     seedRegOutputActivities(inst, seq, seq->output(), false);
     seedRegOutputActivities(inst, seq, seq->outputInv(), true);
@@ -792,7 +809,7 @@ Power::seedRegOutputActivities(const Instance *inst,
       Pin *pin = pin_iter->next();
       LibertyPort *port = network_->libertyPort(pin);
       if (test_cell)
-	port = test_cell->findLibertyPort(port->name());
+        port = test_cell->findLibertyPort(port->name());
       if (port) {
         FuncExpr *func = port->function();
         Vertex *vertex = graph_->pinDrvrVertex(pin);
@@ -818,28 +835,66 @@ Power::seedRegOutputActivities(const Instance *reg,
 {
   const Pin *out_pin = network_->findPin(reg, output);
   if (!hasUserActivity(out_pin)) {
-    PwrActivity activity = evalActivity(seq->data(), reg);
-    // Register output activity cannnot exceed one transition per clock cycle,
-    // but latch output can.
-    if (seq->isRegister()) {
-      FuncExpr *clk_func = seq->clock();
-      if (clk_func->port()) {
-        const Pin *pin = network_->findPin(reg, clk_func->port());
-        const Clock *clk = findClk(pin);
-        if (clk) {
-          if (activity.density() > 1.0 / clk->period())
-            activity.setDensity(1.0 / clk->period());
-        }
+    PwrActivity in_activity = evalActivity(seq->data(), reg);
+    float in_density = in_activity.density();
+    float in_duty = in_activity.duty();
+    // Default propagates input density/duty thru reg/latch.
+    float out_density = in_density;
+    float out_duty = in_duty;
+    PwrActivity clk_activity = evalActivity(seq->clock(), reg);
+    float clk_density = clk_activity.density();
+    if (in_density > clk_density / 2) {
+      if (seq->isRegister())
+        out_density = 2 * in_duty * (1 - in_duty) * clk_density;
+      else if (seq->isLatch()) {
+        PwrActivity clk_activity = evalActivity(seq->clock(), reg);
+        float clk_duty = clk_activity.duty();
+        FuncExpr *clk_func = seq->clock();
+        bool clk_invert = clk_func
+          && clk_func->op() == FuncExpr::op_not
+          && clk_func->left()->op() == FuncExpr::op_port;
+        if (clk_invert)
+          out_density = in_density * (1 - clk_duty);
+        else
+          out_density = in_density * clk_duty;
       }
     }
     if (invert)
-      activity.setDuty(1.0 - activity.duty());
-    activity.setOrigin(PwrActivityOrigin::propagated);
-    setSeqActivity(reg, output, activity);
+      out_duty = 1.0 - out_duty;
+    PwrActivity out_activity(out_density, out_duty, PwrActivityOrigin::propagated);
+    setSeqActivity(reg, output, out_activity);
   }
 }
 
 ////////////////////////////////////////////////////////////////
+
+void
+Power::ensureInstPowers(const Corner *corner)
+{
+  if (!instance_powers_valid_
+      || corner != corner_) {
+    findInstPowers(corner);
+    instance_powers_valid_ = true;
+  }
+}
+
+void
+Power::findInstPowers(const Corner *corner)
+{
+  Stats stats(debug_, report_);
+  LeafInstanceIterator *inst_iter = network_->leafInstanceIterator();
+  while (inst_iter->hasNext()) {
+    Instance *inst = inst_iter->next();
+    LibertyCell *cell = network_->libertyCell(inst);
+    if (cell) {
+      PowerResult inst_power = power(inst, cell, corner);
+      instance_powers_[inst] = inst_power;
+    }
+  }
+  delete inst_iter;
+  corner_ = corner;
+  stats.report("Find power");
+}
 
 PowerResult
 Power::power(const Instance *inst,
@@ -1378,7 +1433,7 @@ Power::pgNameVoltage(LibertyCell *cell,
 		     const DcalcAnalysisPt *dcalc_ap)
 {
   if (pg_port_name) {
-    LibertyPgPort *pg_port = cell->findPgPort(pg_port_name);
+    LibertyPort *pg_port = cell->findLibertyPort(pg_port_name);
     if (pg_port) {
       const char *volt_name = pg_port->voltageName();
       LibertyLibrary *library = cell->libertyLibrary();
@@ -1494,14 +1549,17 @@ Power::findUnannotatedPins(const Instance *inst,
   InstancePinIterator *pin_iter = network_->pinIterator(inst);
   while (pin_iter->hasNext()) {
     const Pin *pin = pin_iter->next();
+    LibertyPort *liberty_port = sdc_network_->libertyPort(pin);
     if (!network_->direction(pin)->isInternal()
+	&& !network_->direction(pin)->isPowerGround()
+	&& !(liberty_port && liberty_port->isPwrGnd())
         && user_activity_map_.find(pin) == user_activity_map_.end())
       unannotated_pins.push_back(pin);
   }
   delete pin_iter;
 }
 
-// leaf pins - internal pins + top instance pins
+// leaf pins - internal pins - power/ground pins + top instance pins
 size_t
 Power::pinCount()
 {
@@ -1512,7 +1570,10 @@ Power::pinCount()
     InstancePinIterator *pin_iter = network_->pinIterator(leaf);
     while (pin_iter->hasNext()) {
       const Pin *pin = pin_iter->next();
-      if (!network_->direction(pin)->isInternal())
+      LibertyPort *liberty_port = sdc_network_->libertyPort(pin);
+      if (!network_->direction(pin)->isInternal()
+	  && !network_->direction(pin)->isPowerGround()
+	  && !(liberty_port && liberty_port->isPwrGnd()))
         count++;
     }
     delete pin_iter;
@@ -1541,6 +1602,14 @@ Power::clockMinPeriod()
   }
   else
     return 0.0;
+}
+
+void
+Power::powerInvalid()
+{
+  activities_valid_ = false;
+  instance_powers_.clear();
+  corner_ = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////

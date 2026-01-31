@@ -97,7 +97,11 @@ DiversionGreater::operator()(Diversion *div1,
 static void
 deleteDiversionPathEnd(Diversion *div)
 {
-  delete div->pathEnd();
+  PathEnd *div_end = div->pathEnd();
+  Path *div_path = div_end->path();
+  if (div_path->isEnum())
+    delete div_path;
+  delete div_end;
   delete div;
 }
 
@@ -197,6 +201,7 @@ PathEnum::findNext()
       makeDiversions(path_end, div->divPath());
       // Caller owns the path end now, so don't delete it.
       next_ = path_end;
+      //search_->saveEnumPath(path_end->path());
       delete div;
       break;
     }
@@ -410,7 +415,9 @@ PathEnumFaninVisitor::visitFromToPath(const Pin *,
 {
   // These paths fanin to before_div_ so we know to_vertex matches.
   if ((!unique_pins_ || from_vertex != prev_vertex_)
-      && (!unique_edges_ || from_rf != prev_arc_->fromEdge()->asRiseFall())
+      && (!unique_edges_
+          || from_vertex != prev_vertex_
+          || from_rf != prev_arc_->fromEdge()->asRiseFall())
       && arc != prev_arc_
       && Tag::matchNoCrpr(to_tag, before_div_tag_)
       // Ignore paths that only differ by crpr from same vertex/edge.
@@ -435,10 +442,26 @@ PathEnumFaninVisitor::visitFromToPath(const Pin *,
     if (crpr_active_)
       visited_fanins_.emplace(from_vertex, arc);
   }
-  else
-    debugPrint(debug_, "path_enum", 3, "      pruned %s %s",
-	       edge->to_string(this).c_str(),
-	       arc->to_string().c_str());
+  else {
+    if (debug_->check("path_enum", 3)) {
+      bool unique_pins = !(!unique_pins_ || from_vertex != prev_vertex_);
+      bool unique_edges = !(!unique_edges_
+                            || from_rf != prev_arc_->fromEdge()->asRiseFall());
+      bool same_arc = !(arc != prev_arc_);
+      bool tag_march = !Tag::matchNoCrpr(to_tag, before_div_tag_);
+      bool crpr = !(!crpr_active_
+                    || visited_fanins_.find({from_vertex, arc})
+                    == visited_fanins_.end());
+      debugPrint(debug_, "path_enum", 3, "      pruned %s%s%s%s%s %s %s",
+                 unique_pins ? "unique_pins " : "",
+                 unique_edges ? "unique_edges " : "",
+                 same_arc ? "same_arc " : "",
+                 tag_march ? "tag_march " : "",
+                 crpr ? "crpr " : "",
+                 edge->to_string(this).c_str(),
+                 arc->to_string().c_str());
+    }
+  }
   return true;
 }
 
@@ -636,7 +659,8 @@ PathEnum::makeDivertedPath(Path *path,
       after_div_copy = copy;
     if (first)
       div_path = copy;
-    else if (network_->isLatchData(p->pin(this)))
+    else if (found_div
+             && network_->isLatchData(p->pin(this)))
       break;
     if (p == before_div) {
       // Replaced on next pass.

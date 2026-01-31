@@ -136,15 +136,15 @@ typedef Set<InputDelay*> InputDelaySet;
 typedef Map<const Pin*, InputDelaySet*, PinIdLess> InputDelaysPinMap;
 typedef Set<OutputDelay*> OutputDelaySet;
 typedef Map<const Pin*,OutputDelaySet*, PinIdLess> OutputDelaysPinMap;
-typedef UnorderedMap<const Pin*,ExceptionPathSet*> PinExceptionsMap;
-typedef Map<const Clock*,ExceptionPathSet*> ClockExceptionsMap;
-typedef Map<const Instance*,ExceptionPathSet*> InstanceExceptionsMap;
-typedef Map<const Net*,ExceptionPathSet*> NetExceptionsMap;
-typedef UnorderedMap<EdgePins, ExceptionPathSet*,
+typedef UnorderedMap<const Pin*,ExceptionPathSet> PinExceptionsMap;
+typedef UnorderedMap<const Clock*,ExceptionPathSet> ClockExceptionsMap;
+typedef UnorderedMap<const Instance*,ExceptionPathSet> InstanceExceptionsMap;
+typedef UnorderedMap<const Net*,ExceptionPathSet> NetExceptionsMap;
+typedef UnorderedMap<EdgePins, ExceptionPathSet,
 		     PinPairHash, PinPairEqual> EdgeExceptionsMap;
 typedef Vector<ExceptionThru*> ExceptionThruSeq;
 typedef Map<const Port*,InputDrive*> InputDriveMap;
-typedef Map<size_t, ExceptionPathSet*, std::less<size_t> > ExceptionPathPtHash;
+typedef Map<size_t, ExceptionPathSet, std::less<size_t>> ExceptionPathPtHash;
 typedef Set<ClockLatency*, ClockLatencyLess> ClockLatencies;
 typedef Map<const Pin*, ClockUncertainties*> PinClockUncertaintyMap;
 typedef Set<InterClockUncertainty*, InterClockUncertaintyLess> InterClockUncertaintySet;
@@ -1018,7 +1018,7 @@ public:
   const PinSet &pathDelayInternalFrom() const;
   bool isPathDelayInternalTo(const Pin *pin) const;
   bool isPathDelayInternalToBreak(const Pin *pin) const;
-  ExceptionPathSet *exceptions() { return &exceptions_; }
+  ExceptionPathSet &exceptions() { return exceptions_; }
   void deleteExceptions();
   void deleteException(ExceptionPath *exception);
   void recordException(ExceptionPath *exception);
@@ -1027,7 +1027,7 @@ public:
   void removeGraphAnnotations();
 
   // Network edit before/after methods.
-  void disconnectPinBefore(const Pin *pin);
+  void deletePinBefore(const Pin *pin);
   void connectPinAfter(const Pin *pin);
   void clkHpinDisablesChanged(const Pin *pin);
   void makeClkHpinDisable(const Clock *clk,
@@ -1048,7 +1048,6 @@ protected:
   void removeLibertyAnnotations();
   void deleteExceptionsReferencing(Clock *clk);
   void deleteClkPinMappings(Clock *clk);
-  void deleteExceptionPtHashMapSets(ExceptionPathPtHash &map);
   void makeClkPinMappings(Clock *clk);
   void deletePinClocks(Clock *defining_clk,
                        PinSet *pins);
@@ -1121,6 +1120,7 @@ protected:
   void recordMergeHash(ExceptionPath *exception, ExceptionPt *missing_pt);
   void recordMergeHashes(ExceptionPath *exception);
   void unrecordExceptionFirstPts(ExceptionPath *exception);
+  void unrecordExceptionPins(ExceptionPath *exception);
   void unrecordExceptionClks(ExceptionPath *exception,
 			     ClockSet *clks,
 			     ClockExceptionsMap &exception_map);

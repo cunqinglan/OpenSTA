@@ -144,11 +144,11 @@ proc check_unit { unit key suffix key_var } {
     set arg_suffix [string range $value end-[expr $suffix_length - 1] end]
     if { [string match -nocase $arg_suffix $suffix] } {
       set arg_prefix [string range $value 0 end-$suffix_length]
-      if { [regexp "^(10*)?(\[Mkmunpf\])?$" $arg_prefix ignore mult prefix] } {
+      if { [regexp "^(10*\\\.?0*)?(\[Mkmunpf\])?$" $arg_prefix ignore mult prefix] } {
         if { $mult == "" } {
           set mult 1
         }
-        set scale [unit_prefix_scale $unit $prefix ]
+        set scale [unit_prefix_scale $unit $prefix]
         check_unit_scale $unit [expr $scale * $mult]
       } else {
         sta_error 343 "unknown unit $unit prefix '${arg_prefix}'."
@@ -306,11 +306,18 @@ proc current_design { {design ""} } {
 
 # Generic get_* filter.
 proc filter_objs { filter objects filter_function object_type } {
-  set filter_regexp1 {@?([a-zA-Z_]+) *((==|!=|=~|!~) *([0-9a-zA-Z_\*]+))?}
-  set filter_or_regexp "($filter_regexp1) *\\|\\| *($filter_regexp1)"
-  set filter_and_regexp "($filter_regexp1) *&& *($filter_regexp1)"
+  # Regexp for attr op arg (e.g., full_name =~ *blk*)
+  set filter_regexp_op {@?([a-zA-Z_]+) *(==|!=|=~|!~) *([0-9a-zA-Z_\*]+)}
+  # Regexp for bool attr (e.g., is_hierarchical) - anchored for standalone use
+  set filter_regexp_bool {^@?([a-zA-Z_]+)$}
+  # Regexp for wildcard attr (e.g., full_name <?> *blk*)
+  set filter_regexp_wild_op {@?([a-zA-Z_]+) *(.+) *([0-9a-zA-Z_\*]+)}
+  # Regexp for term in compound expression (no anchors)
+  set filter_regexp_term {@?([a-zA-Z_]+)( *(==|!=|=~|!~) *([0-9a-zA-Z_\*]+))?}
+  set filter_or_regexp "($filter_regexp_term) *\\|\\| *($filter_regexp_term)"
+  set filter_and_regexp "($filter_regexp_term) *&& *($filter_regexp_term)"
   set filtered_objects {}
-  # Ignore sub-exprs in filter_regexp1 for expr2 match var.
+  # Ignore sub-exprs in filter_regexp for expr2 match var.
   if { [regexp $filter_or_regexp $filter ignore expr1 ignore ignore ignore ignore expr2] } {
     set filtered_objects1 [filter_objs $expr1 $objects $filter_function $object_type]
     set filtered_objects2 [filter_objs $expr2 $objects $filter_function $object_type]
@@ -318,11 +325,13 @@ proc filter_objs { filter objects filter_function object_type } {
   } elseif { [regexp $filter_and_regexp $filter ignore expr1 ignore ignore ignore ignore expr2] } {
     set filtered_objects [filter_objs $expr1 $objects $filter_function $object_type]
     set filtered_objects [filter_objs $expr2 $filtered_objects $filter_function $object_type]
-  } elseif { [regexp $filter_regexp1 $filter ignore attr_name ignore op arg] } {
-    # If no op/arg, use <attr_name>==1 by default.
-    set op [expr {($op == "") ? "==" : $op}]
-    set arg [expr {($arg == "") ? "1" : $arg}]
+  } elseif { [regexp $filter_regexp_op $filter ignore attr_name op arg] } {
     set filtered_objects [$filter_function $attr_name $op $arg $objects]
+  } elseif { [regexp $filter_regexp_bool $filter ignore attr_name] } {
+    # Bool property: use <attr_name>==1 by default.
+    set filtered_objects [$filter_function $attr_name "==" "1" $objects]
+  } elseif { [regexp $filter_regexp_wild_op $filter ignore attr_name op arg] } {
+    sta_error 336 "unknown filter operand."
   } else {
     sta_error 350 "unsupported $object_type -filter expression."
   }
@@ -578,7 +587,12 @@ proc get_lib_pins { args } {
     }
     set libcells [get_libcells_error "objects" $keys(-of_objects)]
     foreach libcell $libcells {
-      lappend ports {*}[$libcell find_liberty_ports_matching * 0 1]
+      foreach port [$libcell find_liberty_ports_matching * 0 1] {
+	# Filter pg ports.
+	if { ![$port is_pwr_gnd] } {
+	  lappend ports $port
+	}
+      }
     }
   } else {
     foreach pattern $patterns {
@@ -610,8 +624,11 @@ proc get_lib_pins { args } {
 	      set matches [$cell find_liberty_ports_matching $port_pattern \
 	  		   $regexp $nocase]
 	      foreach match $matches {
-		lappend ports $match
-		set found_match 1
+		# Filter pg ports.
+		if { ![$match is_pwr_gnd] } {
+		  lappend ports $match
+		  set found_match 1
+		}
 	      }
 	    }
 	  }
@@ -814,7 +831,10 @@ proc get_pins { args } {
       set pin_iter [$inst pin_iterator]
       while { [$pin_iter has_next] } {
 	set pin [$pin_iter next]
-	lappend pins $pin
+	# Filter pg ports.
+	if { ![$pin is_pwr_gnd] } {
+	  lappend pins $pin
+	}
       }
       $pin_iter finish
     }
@@ -822,7 +842,10 @@ proc get_pins { args } {
       set pin_iter [$net pin_iterator]
       while { [$pin_iter has_next] } {
 	set pin [$pin_iter next]
-	lappend pins $pin
+	# Filter pg ports.
+	if { ![$pin is_pwr_gnd] } {
+	  lappend pins $pin
+	}
       }
       $pin_iter finish
     }
@@ -852,7 +875,12 @@ proc get_pins { args } {
 	} else {
 	  set matches [find_pins_matching $pattern $regexp $nocase]
 	}
-	set pins [concat $pins $matches]
+	foreach match $matches {
+	  # Filter pg ports.
+	  if { ![$match is_pwr_gnd] } {
+	    lappend pins $match
+	  }
+	}
 	if { $matches == {} && !$quiet } {
 	  sta_warn 363 "pin '$pattern' not found."
 	}

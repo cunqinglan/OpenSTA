@@ -907,9 +907,6 @@ public:
   PinSet endpointPins();
   VertexSet *endpoints();
   int endpointViolationCount(const MinMax *min_max);
-  // Find the fanin vertices for a group path.
-  // Vertices in the clock network are NOT included.
-  PinSet findGroupPathPins(const char *group_path_name);
   // Find all required times after updateTiming().
   void findRequireds();
   std::string reportDelayCalc(Edge *edge,
@@ -1156,7 +1153,9 @@ public:
   virtual void disconnectPin(Pin *pin);
   virtual void makePortPin(const char *port_name,
                            PortDirection *dir);
-  // Notify STA of network change.
+  // Notify STA that the network has changed without using the network
+  // editing API. For example, reading a netlist without using the
+  // builtin network readers.
   void networkChanged();
   void deleteLeafInstanceBefore(const Instance *inst);
   void deleteInstancePinsBefore(const Instance *inst);
@@ -1368,6 +1367,7 @@ protected:
   virtual void makeCheckMaxSkews();
   virtual void makeReportPath();
   virtual void makePower();
+  virtual void makeClkSkews();
   virtual void makeObservers();
   NetworkEdit *networkCmdEdit();
 

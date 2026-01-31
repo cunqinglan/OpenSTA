@@ -177,6 +177,7 @@ public:
 
   void disconnectPinBefore(const Pin *pin,
                            const Network *network) override;
+  void deletePinBefore(const Pin *pin) override;
   void loadPinCapacitanceChanged(const Pin *pin) override;
 
   void deleteReducedParasitics(const Net *net,
