@@ -319,6 +319,9 @@ public:
 
   static int transitionCount() { return 2; }  // rise/fall
 
+  void setIsEndpoint(bool is_endpoint) { is_endpoint_ = is_endpoint; }
+  bool isEndPoint() const { return is_endpoint_; }
+
 protected:
   void init(Pin *pin,
 	    bool is_bidirect_drvr,
@@ -361,6 +364,7 @@ protected:
   bool has_downstream_clk_pin_:1;
   bool visited1_:1;
   bool visited2_:1;
+  bool is_endpoint_ = false;
 
 private:
   friend class Graph;

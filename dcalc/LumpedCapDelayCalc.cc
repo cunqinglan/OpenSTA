@@ -75,8 +75,9 @@ LumpedCapDelayCalc::findParasitic(const Pin *drvr_pin,
   const ParasiticAnalysisPt *parasitic_ap = dcalc_ap->parasiticAnalysisPt();
   // Prefer PiElmore.
   parasitic = parasitics_->findPiElmore(drvr_pin, rf, parasitic_ap);
-  if (parasitic)
+  if (parasitic) {
     return parasitic;
+  }
   Parasitic *parasitic_network = parasitics_->findParasiticNetwork(drvr_pin,
                                                                    parasitic_ap);
   if (parasitic_network) {

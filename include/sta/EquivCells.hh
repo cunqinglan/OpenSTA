@@ -45,6 +45,11 @@ public:
   // Find equivalents for cell (member of from_libs) in to_libs.
   LibertyCellSeq *equivs(LibertyCell *cell);
   
+  // API for LR framework
+  const LibertyCellSeq &uniqueEquivCells() const {
+    return unique_equiv_cells_;
+  }
+  
 protected:
   void findEquivCells(const LibertyLibrary *library,
 		      LibertyCellHashMap &hash_matches);

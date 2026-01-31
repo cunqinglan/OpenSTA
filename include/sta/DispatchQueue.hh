@@ -29,6 +29,7 @@ public:
   // Dispatch and move.
   void dispatch(fp_t&& op);
   void finishTasks();
+  size_t numThreads() const { return threads_.size(); }
 
   // Deleted operations
   DispatchQueue(const DispatchQueue& rhs) = delete;

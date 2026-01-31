@@ -1226,6 +1226,16 @@ Power::findSwitchingPower(const Instance *inst,
 
 ////////////////////////////////////////////////////////////////
 
+float
+Power::leakagePower(const Instance *inst,
+                    LibertyCell *cell,
+                    const Corner *corner)
+{
+  PowerResult result;
+  ensureActivities();
+  findLeakagePower(inst, cell, corner, result);
+  return result.leakage();
+}
 
 void
 Power::findLeakagePower(const Instance *inst,

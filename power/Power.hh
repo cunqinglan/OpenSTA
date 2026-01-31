@@ -107,6 +107,9 @@ public:
   float clockMinPeriod();
   InstanceSeq highestPowerInstances(size_t count,
                                     const Corner *corner);
+  float leakagePower(const Instance *inst,
+                    LibertyCell *cell,
+                    const Corner *corner);
 
 protected:
   PwrActivity &activity(const Pin *pin);

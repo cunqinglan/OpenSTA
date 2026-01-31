@@ -325,6 +325,22 @@ TagGroupBldr::copyPaths(TagGroup *tag_group,
   }
 }
 
+void
+TagGroupBldr::ptCopyPaths(TagGroup *tag_group,
+                           sta::Path *pt_paths)
+{
+  for (auto const [tag1, path_index1] : path_index_map_) {
+    size_t path_index2;
+    bool exists2;
+    tag_group->pathIndex(tag1, path_index2, exists2);
+    if (exists2) {
+      pt_paths[path_index2].setArrival(paths_[path_index1].arrival());
+    }
+    else
+      throw std::out_of_range("TagGroupBldr::ptCopyPaths: tag group missing tag");
+  }
+}
+
 ////////////////////////////////////////////////////////////////
 
 size_t

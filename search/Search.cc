@@ -1336,7 +1336,7 @@ ArrivalVisitor::visitFromToPath(const Pin * /* from_pin */,
 				Edge *edge,
 				TimingArc *arc,
 				ArcDelay arc_delay,
-				Vertex * /* to_vertex */,
+				Vertex *to_vertex,
 				const RiseFall *to_rf,
 				Tag *to_tag,
 				Arrival &to_arrival,
@@ -1353,11 +1353,34 @@ ArrivalVisitor::visitFromToPath(const Pin * /* from_pin */,
              from_tag->to_string(this).c_str());
   debugPrint(debug_, "search", 3, "  to tag  : %s",
              to_tag->to_string(this).c_str());
+  
+  // Debug arrival calculation for g42937/Y
+  // const char *to_pin_name = network_->pathName(to_vertex->pin());
+  // bool is_debug_pin = (strcmp(to_pin_name, "g37293/Y") == 0);
+  
   const ClkInfo *to_clk_info = to_tag->clkInfo();
   bool to_is_clk = to_tag->isClock();
   Path *match;
   size_t path_index;
   tag_bldr_->tagMatchPath(to_tag, match, path_index);
+  
+  // if (is_debug_pin) {
+  //   printf("[STA_ARRIVAL] %s <- %s:\n", 
+  //          to_pin_name, network_->pathName(from_vertex->pin()));
+  //   printf("  from_tag: %s\n", from_tag->to_string(this).c_str());
+  //   printf("  to_tag: %s\n", to_tag->to_string(this).c_str());
+  //   printf("  from_arrival: %.6f ps\n", delayAsFloat(from_arrival) * 1e12);
+  //   printf("  arc_delay: %.6f ps\n", delayAsFloat(arc_delay) * 1e12);
+  //   printf("  to_arrival: %.6f ps\n", delayAsFloat(to_arrival) * 1e12);
+  //   printf("  BEFORE setMatchPath: match=%p, path_index=%zu\n", match, path_index);
+  //   if (match) {
+  //     printf("  match->arrival: %.6f ps\n", delayAsFloat(match->arrival()) * 1e12);
+  //   }
+  //   printf("  will_update: %s\n", 
+  //          (match == nullptr || delayGreater(to_arrival, match->arrival(), min_max, this)) ? "YES" : "NO");
+  //   fflush(stdout);
+  // }
+  
   if (match == nullptr
       || delayGreater(to_arrival, match->arrival(), min_max, this)) {
     debugPrint(debug_, "search", 3, "   %s + %s = %s %s %s",
@@ -1367,6 +1390,16 @@ ArrivalVisitor::visitFromToPath(const Pin * /* from_pin */,
                min_max == MinMax::max() ? ">" : "<",
                match ? delayAsString(match->arrival(), this) : "MIA");
     tag_bldr_->setMatchPath(match, path_index, to_tag, to_arrival, from_path, edge, arc);
+    
+    // Debug: print final path_index after setMatchPath
+    // if (is_debug_pin) {
+    //   size_t final_index;
+    //   Path *final_match;
+    //   tag_bldr_->tagMatchPath(to_tag, final_match, final_index);
+    //   printf("  AFTER setMatchPath: final_path_index=%zu, tag_bldr pathCount=%zu\n", 
+    //          final_index, tag_bldr_->pathCount());
+    //   fflush(stdout);
+    // }
     if (crpr_active_
 	&& !has_fanin_one_
 	&& to_clk_info->hasCrprClkPin()
@@ -1599,6 +1632,36 @@ Search::seedClkArrivals(const Pin *pin,
       }
     }
     arrival_iter_->enqueueAdjacentVertices(vertex,  search_adj_);
+  }
+}
+
+void
+Search::localSeedClkArrivals(const Pin *pin,
+			Vertex *vertex,
+			TagGroupBldr *tag_bldr)
+{
+  for (const Clock *clk : *sdc_->findLeafPinClocks(pin)) {
+    debugPrint(debug_, "search", 2, "arrival seed clk %s pin %s",
+               clk->name(), network_->pathName(pin));
+    for (PathAnalysisPt *path_ap : corners_->pathAnalysisPts()) {
+      const MinMax *min_max = path_ap->pathMinMax();
+      for (const RiseFall *rf : RiseFall::range()) {
+	const ClockEdge *clk_edge = clk->edge(rf);
+	const EarlyLate *early_late = min_max;
+	if (clk->isGenerated()
+	    && clk->masterClk() == nullptr)
+	  seedClkDataArrival(pin, rf, clk, clk_edge, min_max, path_ap,
+			     0.0, tag_bldr);
+	else {
+    std::lock_guard<std::mutex> lock(local_seed_mutex_);
+    printf("Seeding clock arrival for clock %s pin %s\n", clk->name(), network_->pathName(pin));
+	  Arrival insertion = clockInsertion(clk, pin, rf, min_max,
+					     early_late, path_ap);
+	  seedClkArrival(pin, rf, clk, clk_edge, min_max, path_ap,
+			 insertion, tag_bldr);
+	}
+      }
+    }
   }
 }
 
@@ -2815,9 +2878,9 @@ TagGroup *
 Search::findExistingTagGroup(TagGroupBldr *tag_bldr)
 {
   TagGroup probe(tag_bldr, this);
-  LockGuard lock(tag_group_lock_);
   TagGroup *tag_group = tag_group_set_->findKey(&probe);
   if (tag_group == nullptr) {
+    LockGuard lock(tag_group_lock_);
     printf("Search::findExistingTagGroup: Error: TagGroup not found\n");
     TagGroupIndex tag_group_index;
     if (tag_group_free_indices_.empty())

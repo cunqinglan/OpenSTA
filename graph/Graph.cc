@@ -686,8 +686,15 @@ Graph::initArcLms(Edge *edge)
   size_t lm_count = arc_count * ap_count_;
   LMValue *arc_lms = new LMValue[lm_count];
   edge->setArcLms(arc_lms);
-  for (size_t i = 0; i < lm_count; i++)
-    arc_lms[i] = 1.0;
+  if (edge->role()->isTimingCheck()) {
+    for (size_t i = 0; i < lm_count; i++)
+      arc_lms[i] = 0.0;
+    return;
+  } else {
+    for (size_t i = 0; i < lm_count; i++)
+      arc_lms[i] = 1.0;
+    return;
+  }
 }
 
 void 
