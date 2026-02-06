@@ -33,6 +33,7 @@
 #include "Corner.hh"
 #include "Search.hh"
 #include "Path.hh"
+#include <stdexcept>
 
 namespace sta {
 
