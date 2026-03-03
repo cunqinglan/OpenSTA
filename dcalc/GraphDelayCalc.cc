@@ -998,39 +998,14 @@ GraphDelayCalc::findDriverArcDelays(Vertex *drvr_vertex,
     else {
       Vertex *from_vertex = edge->from(graph_);
       const Slew in_slew = edgeFromSlew(from_vertex, from_rf, edge, dcalc_ap);
+
       ArcDcalcResult dcalc_result = arc_delay_calc->gateDelay(drvr_pin, arc, in_slew,
                                                               load_cap, parasitic,
                                                               load_pin_index_map,
                                                               dcalc_ap);
+
       delay_changed |= annotateDelaysSlews(edge, arc, dcalc_result,
                                            load_pin_index_map, dcalc_ap);
-
-      // std::string debug_info = "OPENSTACHECK: Driver Instance: ";
-      // Instance *drvr_inst = network_->instance(drvr_vertex->pin());
-      // if (drvr_inst) {
-      //     debug_info += network_->name(drvr_inst);
-      //     LibertyCell *cell = network_->libertyCell(drvr_inst);
-      //     if (cell) 
-      //         debug_info += " LibCell: " + std::string(cell->name());
-      // } else {
-      //     debug_info += "Top/Unknown";
-      // }
-      
-      // debug_info += ", Arc: " + arc->to_string() 
-      //        + " DcalcAP: " + std::to_string(dcalc_ap->index());
-
-      // if (parasitic)
-      //   debug_info += ", Load Cap: " + std::to_string(parasitics_->capacitance(parasitic) * 1e15) + "fF";
-      // else
-      //   debug_info += ", Load Cap: null";
-
-      // debug_info += ", In Slew: " + std::to_string(1e12 * in_slew)
-      //                 + ", Gate Delay: " + std::to_string(1e12 * (dcalc_result.gateDelay()))
-      //                 + ", Drvr Slew: " + std::to_string(1e12 * (dcalc_result.drvrSlew())) 
-      //                 + ", Cur Slew: " + std::to_string(1e12 * graph_->slew(drvr_vertex, drvr_rf, dcalc_ap->index()))
-      //                 + "\n";
-      // printf("%s", debug_info.c_str());
-      // fflush(stdout);
     }
     arc_delay_calc->finishDrvrPin();
   }

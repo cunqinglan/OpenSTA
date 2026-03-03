@@ -336,6 +336,8 @@ TagGroupBldr::ptCopyPaths(TagGroup *tag_group,
     tag_group->pathIndex(tag1, path_index2, exists2);
     if (exists2) {
       pt_paths[path_index2].setArrival(paths_[path_index1].arrival());
+      pt_paths[path_index2].setPrevPath(paths_[path_index1].prevPath());
+      pt_paths[path_index2].setPrevEdgeArc(paths_[path_index1].prevEdge(sta_), paths_[path_index1].prevArc(sta_), sta_);
     }
     else
       throw std::out_of_range("TagGroupBldr::ptCopyPaths: tag group missing tag");
