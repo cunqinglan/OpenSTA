@@ -336,8 +336,13 @@ TagGroupBldr::ptCopyPaths(TagGroup *tag_group,
     tag_group->pathIndex(tag1, path_index2, exists2);
     if (exists2) {
       pt_paths[path_index2].setArrival(paths_[path_index1].arrival());
-      pt_paths[path_index2].setPrevPath(paths_[path_index1].prevPath());
-      pt_paths[path_index2].setPrevEdgeArc(paths_[path_index1].prevEdge(sta_), paths_[path_index1].prevArc(sta_), sta_);
+      // Skip prevPath/prevEdgeArc copy: local timing never uses prev
+      // linkage (see LocalSearch.cc localVisitFromToPath comment), and
+      // prevArc() dereferences the global graph's edge which still has the
+      // original cell's TimingArcSet.  After virtualReplaceCell the PtEdge
+      // holds the *new* cell's arcs, so the arc index stored in the
+      // tag_bldr path can be out-of-range for the original arc set,
+      // causing a segfault in prevArc().
     }
     else
       throw std::out_of_range("TagGroupBldr::ptCopyPaths: tag group missing tag");
