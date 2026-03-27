@@ -2931,7 +2931,7 @@ Search::findExistingTagGroup(TagGroupBldr *tag_bldr)
   TagGroup *tag_group = tag_group_set_->findKey(&probe);
   if (tag_group == nullptr) {
     LockGuard lock(tag_group_lock_);
-    printf("Search::findExistingTagGroup: Error: TagGroup not found\n");
+    // printf("Search::findExistingTagGroup: Error: TagGroup not found\n");
     TagGroupIndex tag_group_index;
     if (tag_group_free_indices_.empty())
       tag_group_index = tag_group_next_++;
