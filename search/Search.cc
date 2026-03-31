@@ -2929,6 +2929,7 @@ Search::findExistingTagGroup(TagGroupBldr *tag_bldr)
 {
   TagGroup probe(tag_bldr, this);
   TagGroup *tag_group = tag_group_set_->findKey(&probe);
+<<<<<<< 2d449250c54595f45a01c8261f4ddeba6a35a8c6
   if (tag_group == nullptr) {
     LockGuard lock(tag_group_lock_);
     // printf("Search::findExistingTagGroup: Error: TagGroup not found\n");
@@ -2958,6 +2959,10 @@ Search::findExistingTagGroup(TagGroupBldr *tag_bldr)
     if (tag_group_next_ > tag_group_index_max)
       report_->critical(1510, "max tag group index exceeded");
   }
+=======
+  // Local graph may produce a tag subset not present in global set.
+  // Return nullptr instead of creating — caller handles the mismatch.
+>>>>>>> Return nullptr from findExistingTagGroup when tag group not found
   return tag_group;
 }
 
