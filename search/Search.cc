@@ -2929,40 +2929,8 @@ Search::findExistingTagGroup(TagGroupBldr *tag_bldr)
 {
   TagGroup probe(tag_bldr, this);
   TagGroup *tag_group = tag_group_set_->findKey(&probe);
-<<<<<<< 2d449250c54595f45a01c8261f4ddeba6a35a8c6
-  if (tag_group == nullptr) {
-    LockGuard lock(tag_group_lock_);
-    // printf("Search::findExistingTagGroup: Error: TagGroup not found\n");
-    TagGroupIndex tag_group_index;
-    if (tag_group_free_indices_.empty())
-      tag_group_index = tag_group_next_++;
-    else {
-      tag_group_index = tag_group_free_indices_.back();
-      tag_group_free_indices_.pop_back();
-    }
-    tag_group = tag_bldr->makeTagGroup(tag_group_index, this);
-    tag_groups_[tag_group_index] = tag_group;
-    tag_group_set_->insert(tag_group);
-    // If tag_groups_ needs to grow make the new array and copy the
-    // contents into it before updating tags_groups_ so that other threads
-    // can use Search::tagGroup(TagGroupIndex) without returning gubbish.
-    if (tag_group_next_ == tag_group_capacity_) {
-      TagGroupIndex tag_capacity = tag_group_capacity_ * 2;
-      TagGroup **tag_groups = new TagGroup*[tag_capacity];
-      memcpy(tag_groups, tag_groups_,
-             tag_group_capacity_ * sizeof(TagGroup*));
-      tag_groups_prev_.push_back(tag_groups_);
-      tag_groups_ = tag_groups;
-      tag_group_capacity_ = tag_capacity;
-      tag_group_set_->reserve(tag_capacity);
-    }
-    if (tag_group_next_ > tag_group_index_max)
-      report_->critical(1510, "max tag group index exceeded");
-  }
-=======
   // Local graph may produce a tag subset not present in global set.
   // Return nullptr instead of creating — caller handles the mismatch.
->>>>>>> Return nullptr from findExistingTagGroup when tag group not found
   return tag_group;
 }
 
