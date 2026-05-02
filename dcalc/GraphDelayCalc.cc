@@ -24,6 +24,8 @@
 
 #include "GraphDelayCalc.hh"
 
+#include <algorithm>
+
 #include "Debug.hh"
 #include "Stats.hh"
 #include "MinMax.hh"
@@ -1006,6 +1008,21 @@ GraphDelayCalc::findDriverArcDelays(Vertex *drvr_vertex,
 
       delay_changed |= annotateDelaysSlews(edge, arc, dcalc_result,
                                            load_pin_index_map, dcalc_ap);
+
+      // Finite-difference ∂gate_delay/∂in_slew, stored on the edge per (arc, ap).
+      if (graph_->enableDiff()) {
+        float in_slew_f = delayAsFloat(in_slew);
+        float delta = std::max(std::abs(in_slew_f) * 1e-2f, 1e-12f);
+        Slew in_slew_p(in_slew_f + delta);
+        ArcDcalcResult dcalc_p = arc_delay_calc->gateDelay(drvr_pin, arc, in_slew_p,
+                                                           load_cap, parasitic,
+                                                           load_pin_index_map,
+                                                           dcalc_ap);
+        float diff = (delayAsFloat(dcalc_p.gateDelay())
+                      - delayAsFloat(dcalc_result.gateDelay())) / delta;
+        size_t idx = arc->index() * graph_->apCount() + dcalc_ap->index();
+        graph_->ensureDelayDiffs(edge)[idx] = diff;
+      }
     }
     arc_delay_calc->finishDrvrPin();
   }

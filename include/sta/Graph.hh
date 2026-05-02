@@ -75,6 +75,7 @@ public:
   size_t slewCount();
   void setLrMode(bool lr_mode) { lr_mode_ = lr_mode; }
   void initArcLms(Edge *edge);
+  float *ensureDelayDiffs(Edge *edge);
 
   // Vertex functions.
   // Bidirect pins have two vertices.
@@ -198,6 +199,10 @@ public:
   size_t slew_rf_count() const { return slew_rf_count_; }
   DcalcAPIndex apCount() const { return ap_count_; }
 
+  // Flag of computing delay diff
+  bool enableDiff() const { return enable_diff_; }
+  void setEnableDiff(bool enable) { enable_diff_ = enable; }
+
 protected:
   void makeVerticesAndEdges();
   Vertex *makeVertex(Pin *pin,
@@ -240,6 +245,7 @@ protected:
   // Register/latch clock vertices to search from.
   VertexSet *reg_clk_vertices_;
   bool lr_mode_;
+  bool enable_diff_ = false;
 
   friend class Vertex;
   friend class VertexIterator;
@@ -391,7 +397,9 @@ public:
   TimingArcSet *timingArcSet() const { return arc_set_; }
   void setTimingArcSet(TimingArcSet *set);
   ArcDelay *arcDelays() const { return arc_delays_; }
+  float *delayDiffs() const { return delay_diffs_; }
   void setArcDelays(ArcDelay *arc_delays);
+  void setDelayDiffs(float *delay_diffs);
   bool delay_Annotation_Is_Incremental() const {return delay_annotation_is_incremental_;};
   void setDelayAnnotationIsIncremental(bool is_incr);
   // Edge is disabled by set_disable_timing constraint.
@@ -422,6 +430,9 @@ public:
   LMValue* arcLms() const { return arc_lms_; }
   void setArcLms(LMValue* arc_lms);
   void setLrMode(bool lr_mode) {lr_mode_ = lr_mode;};
+
+  // Delay difference on current condition
+  float* delayDiff() const { return delay_diffs_; }
 
 protected:
   void init(VertexId from,
@@ -459,6 +470,7 @@ protected:
   bool is_disabled_loop_:1;
   unsigned object_idx_:VertexTable::idx_bits;
   LMValue* arc_lms_ = nullptr;
+  float* delay_diffs_ = nullptr;
   bool lr_mode_ = false;
 
 private:

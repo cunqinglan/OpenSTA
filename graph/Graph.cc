@@ -861,6 +861,18 @@ Graph::initArcDelays(Edge *edge)
     arc_delays[i] = 0.0;
 }
 
+float *
+Graph::ensureDelayDiffs(Edge *edge)
+{
+  float *diffs = edge->delayDiffs();
+  if (diffs)
+    return diffs;
+  size_t n = edge->timingArcSet()->arcCount() * ap_count_;
+  diffs = new float[n]();
+  edge->setDelayDiffs(diffs);
+  return diffs;
+}
+
 bool
 Graph::delayAnnotated(Edge *edge)
 {
@@ -1286,6 +1298,7 @@ Edge::init(VertexId from,
   is_disabled_cond_ = false;
   is_disabled_loop_ = false;
   arc_lms_ = nullptr;
+  delay_diffs_ = nullptr;
 }
 
 Edge::~Edge()
@@ -1302,6 +1315,8 @@ Edge::clear()
     delete arc_delay_annotated_.seq_;
   arc_delay_annotated_is_bits_ = true;
   arc_delay_annotated_.seq_ = nullptr;
+  delete [] delay_diffs_;
+  delay_diffs_ = nullptr;
 }
 
 void
@@ -1336,6 +1351,13 @@ Edge::setArcDelays(ArcDelay *arc_delays)
 {
   delete [] arc_delays_;
   arc_delays_ = arc_delays;
+}
+
+void
+Edge::setDelayDiffs(float *delay_diffs)
+{
+  delete [] delay_diffs_;
+  delay_diffs_ = delay_diffs;
 }
 
 bool
