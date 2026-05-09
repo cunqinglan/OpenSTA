@@ -3,8 +3,8 @@
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_hdl//dependency_support/com_github_westes_flex:flex.bzl", "genlex")
-load("@rules_hdl//dependency_support/org_gnu_bison:bison.bzl", "genyacc")
+load("//bazel:bison.bzl", "genyacc")
+load("//bazel:flex.bzl", "genlex")
 load("//bazel:tcl_encode_sta.bzl", "tcl_encode_sta")
 load("//bazel:tcl_wrap_cc.bzl", "tcl_wrap_cc")
 
@@ -177,12 +177,14 @@ tcl_encode_sta(
 genrule(
     name = "StaConfig",
     srcs = [],
-    outs = ["util/StaConfig.hh"],
+    outs = ["include/sta/StaConfig.hh"],
     cmd = """echo -e '
+    #pragma once
     #define STA_VERSION "2.7.0"
     #define STA_GIT_SHA1 "f21d4a3878e2531e3af4930818d9b5968aad9416"
     #define SSTA 0
-    #define ZLIB_FOUND' > \"$@\"
+    #define ZLIB_FOUND
+    #define HAVE_CXX_STD_FORMAT 1' > \"$@\"
     """,
     visibility = ["//:__subpackages__"],
 )
@@ -270,7 +272,6 @@ cc_binary(
         "app/Main.cc",
         ":StaApp",
         ":StaTclInitVar",
-        "//bazel:runfiles",
     ],
     copts = [
         "-Wno-error",
@@ -295,8 +296,10 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":opensta_lib",
+        "//:tcl_readline_setup",
+        "//bazel:tcl_library_init",
         "@rules_cc//cc/runfiles",
-        "@tk_tcl//:tcl",
+        "@tcl_lang//:tcl",
     ],
 )
 
@@ -336,15 +339,13 @@ cc_library(
         ],
     ) + [
         "app/StaMain.cc",
-        "util/Machine.cc",
         ":StaConfig",
-    ],
-    #+ select({
-    #        "@bazel_tools//src/conditions:windows": ["util/MachineWin32.cc"],
-    #        "@bazel_tools//src/conditions:darwin": ["util/MachineApple.cc"],
-    #        "@bazel_tools//src/conditions:linux": ["util/MachineLinux.cc"],
-    #        "//conditions:default": ["util/MachineUnknown.cc"],
-    #    })
+    ] + select({
+        "@platforms//os:linux": ["util/MachineLinux.cc"],
+        "@platforms//os:osx": ["util/MachineApple.cc"],
+        "@platforms//os:windows": ["util/MachineWin32.cc"],
+        "//conditions:default": ["util/MachineUnknown.cc"],
+    }),
     hdrs = glob(
         include = ["include/sta/*.hh"],
     ) + [
@@ -390,14 +391,13 @@ cc_library(
         "util",
         "verilog",
     ],
-    textual_hdrs = ["util/MachineLinux.cc"],
     visibility = ["//:__subpackages__"],
     deps = [
         "@cudd",
         "@eigen",
         "@openmp",
         "@rules_flex//flex:current_flex_toolchain",
-        "@tk_tcl//:tcl",
+        "@tcl_lang//:tcl",
         "@zlib",
     ],
 )
