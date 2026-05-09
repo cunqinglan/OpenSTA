@@ -1450,7 +1450,7 @@ Power::leakagePower(const Instance *inst,
                     const Scene *scene)
 {
   PowerResult result;
-  ensureActivities();
+  ensureActivities(scene);
   findLeakagePower(inst, cell, scene, result);
   return result.leakage();
 }

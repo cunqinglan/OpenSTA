@@ -448,11 +448,12 @@ VerilogWriter::writeAssigns(const Instance *inst)
       Net *net = network_->net(term);
       if (!net) {
         Port *dbg_port = network_->port(pin);
-        const char *dbg_port_name = dbg_port ? network_->name(dbg_port) : "?";
-        const char *dbg_cell_name = network_->cellName(inst);
+        std::string dbg_port_name = dbg_port ? network_->name(dbg_port) : "?";
+        std::string dbg_cell_name = network_->cellName(inst);
         fprintf(stderr, "WARNING: writeAssigns: term has no net "
                 "for port '%s' of module '%s'\n",
-                dbg_port_name, dbg_cell_name ? dbg_cell_name : "?");
+                dbg_port_name.c_str(),
+                dbg_cell_name.empty() ? "?" : dbg_cell_name.c_str());
         continue;
       }
       Port *port = network_->port(pin);

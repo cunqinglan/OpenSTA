@@ -1535,32 +1535,17 @@ Search::seedClkArrivals(const Pin *pin,
 
 void
 Search::localSeedClkArrivals(const Pin *pin,
-			Vertex *vertex,
-			TagGroupBldr *tag_bldr)
+                             Vertex *vertex,
+                             TagGroupBldr *tag_bldr)
 {
-  for (const Clock *clk : *sdc_->findLeafPinClocks(pin)) {
-    debugPrint(debug_, "search", 2, "arrival seed clk %s pin %s",
-               clk->name(), network_->pathName(pin));
-    for (PathAnalysisPt *path_ap : corners_->pathAnalysisPts()) {
-      const MinMax *min_max = path_ap->pathMinMax();
-      for (const RiseFall *rf : RiseFall::range()) {
-	const ClockEdge *clk_edge = clk->edge(rf);
-	const EarlyLate *early_late = min_max;
-	if (clk->isGenerated()
-	    && clk->masterClk() == nullptr)
-	  seedClkDataArrival(pin, rf, clk, clk_edge, min_max, path_ap,
-			     0.0, tag_bldr);
-	else {
-    std::lock_guard<std::mutex> lock(local_seed_mutex_);
-    printf("Seeding clock arrival for clock %s pin %s\n", clk->name(), network_->pathName(pin));
-	  Arrival insertion = clockInsertion(clk, pin, rf, min_max,
-					     early_late, path_ap);
-	  seedClkArrival(pin, rf, clk, clk_edge, min_max, path_ap,
-			 insertion, tag_bldr);
-	}
-      }
-    }
-  }
+  // TODO(LRF Phase 3): rewrite for Scene API.
+  // Old body referenced sdc_/corners_/PathAnalysisPt which were replaced by
+  // Mode-based access (mode->sdc(), mode->scenes()). Caller in
+  // src/lrf/LocalSearch.cc must pass Mode* instead of Vertex* before this
+  // body is restored.
+  (void)pin;
+  (void)vertex;
+  (void)tag_bldr;
 }
 
 void
@@ -2734,10 +2719,10 @@ TagGroup *
 Search::findExistingTagGroup(TagGroupBldr *tag_bldr)
 {
   TagGroup probe(tag_bldr, this);
-  TagGroup *tag_group = tag_group_set_->findKey(&probe);
+  auto it = tag_group_set_->find(&probe);
   // Local graph may produce a tag subset not present in global set.
   // Return nullptr instead of creating — caller handles the mismatch.
-  return tag_group;
+  return (it == tag_group_set_->end()) ? nullptr : *it;
 }
 
 void

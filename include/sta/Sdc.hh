@@ -1052,11 +1052,6 @@ public:
                           const Pin *drvr,
                           const Pin *load);
   void ensureClkHpinDisables();
-  float portCapacitance(Instance *inst,
-                        LibertyPort *port,
-			const RiseFall *rf,
-			const Corner *corner,
-			const MinMax *min_max) const;
 
   ////////////////////////////////////////////////////////////////
   //

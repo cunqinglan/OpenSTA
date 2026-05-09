@@ -186,7 +186,7 @@ public:
   static constexpr int vertex_level_bits = 24;
   static constexpr int vertex_level_max = (1<<vertex_level_bits)-1;
 
-  size_t slew_rf_count() const { return slew_rf_count_; }
+  size_t slew_rf_count() const { return 2; }  // rise/fall
   DcalcAPIndex apCount() const { return ap_count_; }
 
   // Flag of computing delay diff
