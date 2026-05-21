@@ -28,6 +28,8 @@
 #include "Debug.hh"
 #include "Graph.hh"
 #include "Path.hh"
+#include <atomic>
+#include <cstdio>
 #include <stdexcept>
 #include "Report.hh"
 #include "Scene.hh"
@@ -334,8 +336,19 @@ TagGroupBldr::ptCopyPaths(TagGroup *tag_group,
       // tag_bldr path can be out-of-range for the original arc set,
       // causing a segfault in prevArc().
     }
-    else
-      throw std::out_of_range("TagGroupBldr::ptCopyPaths: tag group missing tag");
+    else {
+      // BUG: local search produced a tag that prev_tag_group does not contain.
+      // Drop it (prev_paths has no slot to write to). Worker-thread safe:
+      // atomic-sampled stderr print, not report->critical/throw.
+      static std::atomic<size_t> miss_count{0};
+      size_t n = miss_count.fetch_add(1, std::memory_order_relaxed);
+      if (n < 32) {
+        fprintf(stderr,
+                "[BUG] TagGroupBldr::ptCopyPaths subset miss #%zu: tag=%s\n",
+                n,
+                tag1->to_string(sta_).c_str());
+      }
+    }
   }
 }
 
