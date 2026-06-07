@@ -316,10 +316,13 @@ protected:
             bool is_bidirect_drvr,
             bool is_reg_clk);
   void clear();
+  // LRF: PtVertex::copyInfoFromVertex needs raw slew array access.
+public:
   Slew *slews() { return reinterpret_cast<Slew*>(slews_); }
   const Slew *slews() const { return reinterpret_cast<const Slew*>(slews_); }
   float *slewsFloat() { return slews_; }
   const float *slewsFloat() const { return slews_; }
+protected:
   void setSlews(float *slews);
 
   Pin *pin_;
@@ -360,6 +363,7 @@ private:
   friend class Edge;
   friend class VertexInEdgeIterator;
   friend class VertexOutEdgeIterator;
+  friend class PtVertex;
 };
 
 // There is one Edge between each pair of pins that has a timing

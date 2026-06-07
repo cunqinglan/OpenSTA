@@ -36,6 +36,9 @@ public:
   virtual ~VertexVisitor() = default;
   virtual VertexVisitor *copy() const = 0;
   virtual void visit(Vertex *vertex) = 0;
+  // Called at the end of each level by BfsIterator::visit/visitParallel
+  // (LRF: serial between-level hook for updateParasitics + findDelays).
+  virtual void levelFinished() {}
   void operator()(Vertex *vertex) { visit(vertex); }
 };
 

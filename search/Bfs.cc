@@ -152,6 +152,7 @@ BfsIterator::visit(Level to_level,
       }
     }
     level_vertices.clear();
+    visitor->levelFinished();
   }
   return visit_count;
 }
@@ -207,6 +208,7 @@ BfsIterator::visitParallel(Level to_level,
             }
             dispatch_queue_->finishTasks();
           }
+          visitor->levelFinished();
           level_vertices.clear();
           visit_count += vertex_count;
         }
