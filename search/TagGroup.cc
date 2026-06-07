@@ -28,6 +28,11 @@
 #include "Debug.hh"
 #include "Graph.hh"
 #include "Path.hh"
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <stdexcept>
+
 #include "Report.hh"
 #include "Scene.hh"
 #include "Search.hh"
@@ -312,6 +317,53 @@ TagGroupBldr::copyPaths(TagGroup *tag_group,
       paths[path_index2] = paths_[path_index1];
     else
       sta_->report()->critical(1360, "tag group missing tag");
+  }
+}
+
+void
+TagGroupBldr::ptCopyPaths(TagGroup *tag_group,
+                           sta::Path *pt_paths)
+{
+  for (auto const [tag1, path_index1] : path_index_map_) {
+    size_t path_index2;
+    bool exists2;
+    tag_group->pathIndex(tag1, path_index2, exists2);
+    if (exists2) {
+      pt_paths[path_index2].setArrival(paths_[path_index1].arrival());
+      // Skip prevPath/prevEdgeArc copy: local timing never uses prev
+      // linkage (see LocalSearch.cc localVisitFromToPath comment), and
+      // prevArc() dereferences the global graph's edge which still has the
+      // original cell's TimingArcSet.  After virtualReplaceCell the PtEdge
+      // holds the *new* cell's arcs, so the arc index stored in the
+      // tag_bldr path can be out-of-range for the original arc set,
+      // causing a segfault in prevArc().
+    }
+    else {
+      // tag1 (locally rebuilt) is not in prev_tag_group. Two cases:
+      //  (1) It differs from an original tag ONLY in crpr. This happens because
+      //      local timing skips derate, so arc_delay_min_max_eq flips to true on
+      //      the clock network and thruClkInfo attaches a different crpr_clk_path.
+      //      Map it back to the everything-but-crpr sibling and copy the arrival.
+      //  (2) No such sibling, e.g. local launches a clocked reg-clk->Q path on a
+      //      memory output that the global STA leaves unclocked (in floorplan the
+      //      clock does not launch through these SRAM CLK->Q arcs, so the global
+      //      tag group has only unclocked tags). This clocked tag does not exist
+      //      in global; dropping it is correct -- prev_paths keeps the unclocked
+      //      global set, and since downstream reads prev_paths the transient
+      //      clocked tag never propagates. Benign; trace only under LRF_TAG_DEBUG.
+      Tag *sibling = nullptr;
+      size_t sibling_index = 0;
+      for (auto const &entry : *tag_group->pathIndexMap()) {
+        if (Tag::matchNoCrpr(tag1, entry.first())) {
+          sibling = entry.first();
+          sibling_index = entry.second();
+          break;
+        }
+      }
+      if (sibling) {
+        pt_paths[sibling_index].setArrival(paths_[path_index1].arrival());
+      }
+    }
   }
 }
 

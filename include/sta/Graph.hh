@@ -66,6 +66,9 @@ public:
   // Number of arc delays and slews from sdf or delay calculation.
   void setDelayCount(DcalcAPIndex ap_count);
   size_t slewCount();
+  void setLrMode(bool lr_mode) { lr_mode_ = lr_mode; }
+  void initArcLms(Edge *edge);
+  float *ensureDelayDiffs(Edge *edge);
 
   // Vertex functions.
   // Bidirect pins have two vertices.
@@ -183,6 +186,13 @@ public:
   static constexpr int vertex_level_bits = 24;
   static constexpr int vertex_level_max = (1<<vertex_level_bits)-1;
 
+  size_t slew_rf_count() const { return slew_rf_count_; }
+  DcalcAPIndex apCount() const { return ap_count_; }
+
+  // Flag of computing delay diff
+  bool enableDiff() const { return enable_diff_; }
+  void setEnableDiff(bool enable) { enable_diff_ = enable; }
+
 protected:
   void makeVerticesAndEdges();
   Vertex *makeVertex(Pin *pin,
@@ -219,16 +229,26 @@ protected:
   //  in pin_bidirect_drvr_vertex_map
   PinVertexMap pin_bidirect_drvr_vertex_map_;
   DcalcAPIndex ap_count_;
+  // LRF: rise/fall slew entries per analysis point (PhySyn fork carried this as
+  // a ctor arg; master's Graph ctor dropped it). Used by lrf slew indexing.
+  // TODO(LRF-migration): verify against master slew storage (slewCount()).
+  int slew_rf_count_ = RiseFall::index_count;
   // Sdf period check annotations.
   PeriodCheckAnnotations period_check_annotations_;
   // Register/latch clock vertices to search from.
   VertexSet reg_clk_vertices_;
+  // LRF: matches PhySyn fork (Graph ctor set lr_mode_=true). Gates per-edge
+  // setLrMode + initArcLms in makeEdge; required to reproduce LRF behavior.
+  bool lr_mode_ = true;
+  bool enable_diff_ = false;
 
   friend class Vertex;
   friend class VertexIterator;
   friend class VertexInEdgeIterator;
   friend class VertexOutEdgeIterator;
   friend class MakeEdgesThruHierPin;
+  friend class PtGraph;
+  friend class PtEdge;
 };
 
 // Each Vertex corresponds to one network pin.
@@ -286,6 +306,11 @@ public:
   [[nodiscard]] ObjectIdx objectIdx() const { return object_idx_; }
   void setObjectIdx(ObjectIdx idx);
 
+  static int transitionCount() { return 2; }  // rise/fall
+
+  void setIsEndpoint(bool is_endpoint) { is_endpoint_ = is_endpoint; }
+  bool isEndPoint() const { return is_endpoint_; }
+
 protected:
   void init(Pin *pin,
             bool is_bidirect_drvr,
@@ -328,6 +353,7 @@ protected:
   bool visited1_:1;
   bool visited2_:1;
   bool has_sim_value_:1;
+  bool is_endpoint_ = false;
 
 private:
   friend class Graph;
@@ -356,6 +382,8 @@ public:
   float *arcDelays() { return arc_delays_; }
   const float *arcDelays() const { return arc_delays_; }
   void setArcDelays(float *delays);
+  float *delayDiffs() const { return delay_diffs_; }
+  void setDelayDiffs(float *delay_diffs);
   bool delay_Annotation_Is_Incremental() const {return delay_annotation_is_incremental_;};
   void setDelayAnnotationIsIncremental(bool is_incr);
   // Edge is disabled to break combinational loops.
@@ -375,6 +403,14 @@ public:
   // ObjectTable interface.
   ObjectIdx objectIdx() const { return object_idx_; }
   void setObjectIdx(ObjectIdx idx);
+
+  // LR helper values for this edge.
+  LMValue* arcLms() const { return arc_lms_; }
+  void setArcLms(LMValue* arc_lms);
+  void setLrMode(bool lr_mode) {lr_mode_ = lr_mode;};
+
+  // Delay difference on current condition
+  float* delayDiff() const { return delay_diffs_; }
 
 protected:
   void init(VertexId from,
@@ -409,6 +445,9 @@ protected:
   bool has_sim_sense_:1;
   bool has_disabled_cond_:1;
   unsigned object_idx_:VertexTable::idx_bits;
+  LMValue* arc_lms_ = nullptr;
+  float* delay_diffs_ = nullptr;
+  bool lr_mode_ = false;
 
 private:
   friend class Graph;

@@ -1414,6 +1414,7 @@ public:
   void makeEquivCells(LibertyLibrarySeq *equiv_libs,
                       LibertyLibrarySeq *map_libs);
   LibertyCellSeq *equivCells(LibertyCell *cell);
+  const EquivCells *equivCellsRecorder() const { return equiv_cells_; }
 
   void writePathSpice(const Path *path,
                       std::string_view spice_filename,

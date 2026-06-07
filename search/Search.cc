@@ -1323,6 +1323,24 @@ ArrivalVisitor::visitFromToPath(const Pin * /* from_pin */,
   Path *match;
   size_t path_index;
   tag_bldr_->tagMatchPath(to_tag, match, path_index);
+  
+  // if (is_debug_pin) {
+  //   printf("[STA_ARRIVAL] %s <- %s:\n", 
+  //          to_pin_name, network_->pathName(from_vertex->pin()));
+  //   printf("  from_tag: %s\n", from_tag->to_string(this).c_str());
+  //   printf("  to_tag: %s\n", to_tag->to_string(this).c_str());
+  //   printf("  from_arrival: %.6f ps\n", delayAsFloat(from_arrival) * 1e12);
+  //   printf("  arc_delay: %.6f ps\n", delayAsFloat(arc_delay) * 1e12);
+  //   printf("  to_arrival: %.6f ps\n", delayAsFloat(to_arrival) * 1e12);
+  //   printf("  BEFORE setMatchPath: match=%p, path_index=%zu\n", match, path_index);
+  //   if (match) {
+  //     printf("  match->arrival: %.6f ps\n", delayAsFloat(match->arrival()) * 1e12);
+  //   }
+  //   printf("  will_update: %s\n", 
+  //          (match == nullptr || delayGreater(to_arrival, match->arrival(), min_max, this)) ? "YES" : "NO");
+  //   fflush(stdout);
+  // }
+  
   if (match == nullptr
       || delayGreater(to_arrival, match->arrival(), min_max, this)) {
     debugPrint(debug_, "search", 3, "   {} + {} = {} {} {}",
@@ -1502,6 +1520,47 @@ Search::seedClkArrivals(const Pin *pin,
             else {
               Arrival insertion =
                   clockInsertion(clk, pin, rf, min_max, early_late, mode);
+              seedClkArrival(pin, rf, clk, clk_edge, min_max, insertion, scene,
+                             tag_bldr);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// LRF: local-STA clock arrival seeding (parallel; guarded by local_seed_mutex_).
+// Ported to master Scene/Mode API (was Corner/PathAnalysisPt-based).
+// TODO(LRF-migration): if local STA spans multiple modes, iterate modes rather
+// than using cmdMode().
+void
+Search::localSeedClkArrivals(const Pin *pin,
+			Vertex *vertex,
+			TagGroupBldr *tag_bldr)
+{
+  (void) vertex;
+  for (const Mode *mode : modes_) {
+    const Sdc *sdc = mode->sdc();
+    ClockSet *clks = sdc->findLeafPinClocks(pin);
+    if (clks == nullptr) {
+      continue;
+    }
+    for (const Clock *clk : *clks) {
+      debugPrint(debug_, "search", 2, "local arrival seed clk {} pin {}",
+                 clk->name(), network_->pathName(pin));
+      for (Scene *scene : mode->scenes()) {
+        for (const MinMax *min_max : MinMax::range()) {
+          for (const RiseFall *rf : RiseFall::range()) {
+            const ClockEdge *clk_edge = clk->edge(rf);
+            const EarlyLate *early_late = min_max;
+            if (clk->isGenerated() && clk->masterClk() == nullptr)
+              seedClkDataArrival(pin, rf, clk, clk_edge, min_max, 0.0, scene,
+                                 tag_bldr);
+            else {
+              std::lock_guard<std::mutex> lock(local_seed_mutex_);
+              Arrival insertion = clockInsertion(clk, pin, rf, min_max,
+                                                 early_late, mode);
               seedClkArrival(pin, rf, clk, clk_edge, min_max, insertion, scene,
                              tag_bldr);
             }
@@ -2680,6 +2739,16 @@ Search::findTagGroup(TagGroupBldr *tag_bldr)
       report_->critical(1510, "max tag group index exceeded");
   }
   return tag_group;
+}
+
+TagGroup *
+Search::findExistingTagGroup(TagGroupBldr *tag_bldr)
+{
+  TagGroup probe(tag_bldr, this);
+  auto it = tag_group_set_->find(&probe);
+  // Local graph may produce a tag subset not present in global set.
+  // Return nullptr instead of creating — caller handles the mismatch.
+  return (it != tag_group_set_->end()) ? *it : nullptr;
 }
 
 void

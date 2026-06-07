@@ -128,6 +128,11 @@ public:
                                 bool report_annotated);
   float clockMinPeriod(const Sdc *sdc);
   float clockMinPeriod();
+  InstanceSeq highestPowerInstances(size_t count,
+                                    const Scene *scene);
+  float leakagePower(const Instance *inst,
+                    LibertyCell *cell,
+                    const Scene *scene);
   void powerInvalid();
 
 protected:

@@ -323,6 +323,9 @@ public:
   void setCell(ConcreteCell *cell);
   void initPins();
 
+  void setId1(ObjectId id1) { id1_ = id1; }
+  ObjectId id1() const { return id1_; }
+
 protected:
   ConcreteInstance(std::string_view name,
                    ConcreteCell *cell,
@@ -338,6 +341,8 @@ protected:
   ConcreteInstanceChildMap *children_{nullptr};
   ConcreteInstanceNetMap *nets_{nullptr};
   AttributeMap attribute_map_;
+
+  ObjectId id1_ = 0;  // For TaskArranger vertex id mapping.
 
 private:
   friend class ConcreteNetwork;

@@ -150,6 +150,10 @@ public:
                           const Parasitics *parasitics) const override;
   void deleteLoad(const Pin *load_pin);
   ConcreteElmoreLoadMap &loads() { return loads_; }
+  const ConcreteElmoreLoadMap &loads() const { return loads_; }
+  float c2() const { return c2_; }
+  float rpi() const { return rpi_; }
+  float c1() const { return c1_; }
 
 private:
   ConcreteElmoreLoadMap loads_;

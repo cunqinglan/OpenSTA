@@ -43,6 +43,10 @@ class VertexIterator;
 class VertexInEdgeIterator;
 class VertexOutEdgeIterator;
 
+class PtVertex;
+class PtEdge;
+class PtGraph;
+
 class VertexIdLess
 {
 public:
@@ -66,6 +70,10 @@ using DcalcAPIndex = int;
 using TagGroupIndex = int;
 using SlewSeq = std::vector<Slew>;
 
+typedef float LMValue;
+typedef double LMValueDBL;
+typedef std::vector<LMValue> LMValueSeq;
+
 static constexpr int level_max = std::numeric_limits<Level>::max();
 
 // 16,777,215 tags
@@ -74,6 +82,6 @@ static constexpr TagGroupIndex tag_group_index_max = (1<<tag_group_index_bits)-1
 static constexpr int slew_annotated_bits = MinMax::index_count * RiseFall::index_count;
 
 // Bit shifts used to mark vertices in a Bfs queue.
-enum class BfsIndex { dcalc, arrival, required, other, bits };
+enum class BfsIndex { dcalc, arrival, required, other, bits, MEE, topo, slacpro };
 
 } // namespace sta

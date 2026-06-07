@@ -654,7 +654,36 @@ Graph::makeEdge(Vertex *from,
   to->in_edges_ = edge_id;
 
   initArcDelays(edge);
+  if (lr_mode_) {
+    edge->setLrMode(true);
+    initArcLms(edge);
+  }
   return edge;
+}
+
+void 
+Graph::initArcLms(Edge *edge)
+{
+  size_t arc_count = edge->timingArcSet()->arcCount();
+  size_t lm_count = arc_count * ap_count_;
+  LMValue *arc_lms = new LMValue[lm_count];
+  edge->setArcLms(arc_lms);
+  if (edge->role()->isTimingCheck()) {
+    for (size_t i = 0; i < lm_count; i++)
+      arc_lms[i] = 0.0;
+    return;
+  } else {
+    for (size_t i = 0; i < lm_count; i++)
+      arc_lms[i] = 1.0;
+    return;
+  }
+}
+
+void 
+Edge::setArcLms(LMValue* arc_lms)
+{
+  delete [] arc_lms_;
+  arc_lms_ = arc_lms;
 }
 
 void
@@ -844,6 +873,19 @@ Graph::initArcDelays(Edge *edge)
     float *delays = new float[delay_count]{};
     edge->setArcDelays(delays);
   }
+}
+
+// LRF: lazily allocate per-(arc, ap) finite-difference delay gradients.
+float *
+Graph::ensureDelayDiffs(Edge *edge)
+{
+  float *diffs = edge->delayDiffs();
+  if (diffs)
+    return diffs;
+  size_t n = edge->timingArcSet()->arcCount() * ap_count_;
+  diffs = new float[n]();
+  edge->setDelayDiffs(diffs);
+  return diffs;
 }
 
 ////////////////////////////////////////////////////////////////
@@ -1230,6 +1272,8 @@ Edge::init(VertexId from,
   is_disabled_loop_ = false;
   has_sim_sense_ = false;
   has_disabled_cond_ = false;
+  arc_lms_ = nullptr;
+  delay_diffs_ = nullptr;
 }
 
 Edge::~Edge()
@@ -1246,6 +1290,8 @@ Edge::clear()
     delete arc_delay_annotated_.seq_;
   arc_delay_annotated_is_bits_ = true;
   arc_delay_annotated_.seq_ = nullptr;
+  delete [] delay_diffs_;
+  delay_diffs_ = nullptr;
 }
 
 void
@@ -1282,6 +1328,13 @@ Edge::setArcDelays(float *delays)
 {
   delete [] arc_delays_;
   arc_delays_ = delays;
+}
+
+void
+Edge::setDelayDiffs(float *delay_diffs)
+{
+  delete [] delay_diffs_;
+  delay_diffs_ = delay_diffs;
 }
 
 bool

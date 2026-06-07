@@ -144,6 +144,8 @@ public:
   PathIndexMap &pathIndexMap() { return path_index_map_; }
   void copyPaths(TagGroup *tag_group,
                  Path *paths);
+  void ptCopyPaths(TagGroup *tag_group,
+                   sta::Path *pt_paths);
 
 protected:
   int tagMatchIndex();

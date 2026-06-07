@@ -192,6 +192,7 @@ public:
                         const Mode *mode) const;
   ClockSet clockDomains(const Pin *pin,
                         const Mode *mode) const;
+  TagGroup *findExistingTagGroup(TagGroupBldr *group_bldr);
 
   ////////////////////////////////////////////////////////////////
   //
@@ -264,6 +265,9 @@ public:
   void seedClkArrivals(const Pin *pin,
                        const Mode *mode,
                        TagGroupBldr *tag_bldr);
+  void localSeedClkArrivals(const Pin *pin,
+            Vertex *vertex,
+            TagGroupBldr *tag_bldr);
   void setVertexArrivals(Vertex *vertex,
                          TagGroupBldr *tag_bldr);
   void tnsInvalid(Vertex *vertex);
@@ -674,6 +678,7 @@ protected:
   VisitPathEnds *visit_path_ends_;
   GatedClk *gated_clk_;
   CheckCrpr *check_crpr_;
+  std::mutex local_seed_mutex_;
 };
 
 // Eval across latch D->Q edges.

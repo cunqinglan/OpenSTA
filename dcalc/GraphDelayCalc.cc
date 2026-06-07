@@ -24,6 +24,7 @@
 
 #include "GraphDelayCalc.hh"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <set>
@@ -402,7 +403,8 @@ GraphDelayCalc::seedRootSlew(Vertex *vertex,
 }
 
 void
-GraphDelayCalc::seedDrvrSlew(Vertex *drvr_vertex,
+GraphDelayCalc::
+seedDrvrSlew(Vertex *drvr_vertex,
                              ArcDelayCalc *arc_delay_calc)
 {
   const Pin *drvr_pin = drvr_vertex->pin();
@@ -1064,6 +1066,7 @@ GraphDelayCalc::findDriverArcDelays(Vertex *drvr_vertex,
 
     if (multi_drvr
         && multi_drvr->parallelGates(network_)) {
+      throw std::runtime_error("Parallel gate delay calculation not implemented.");
       ArcDcalcArgSeq dcalc_args = makeArcDcalcArgs(drvr_vertex, multi_drvr,
                                                    edge, arc, scene, min_max,
                                                    arc_delay_calc);
@@ -1086,9 +1089,27 @@ GraphDelayCalc::findDriverArcDelays(Vertex *drvr_vertex,
                                                               scene, min_max);
       delay_changed |= annotateDelaysSlews(edge, arc, dcalc_result,
                                            load_pin_index_map, scene, min_max);
+
+      // LRF: finite-difference d(gate_delay)/d(in_slew), stored on the edge
+      // per (arc, ap) for fast precheck gradient lookups.
+      if (graph_->enableDiff()) {
+        float in_slew_f = delayAsFloat(in_slew);
+        float delta = std::max(std::abs(in_slew_f) * 1e-2f, 1e-12f);
+        Slew in_slew_p(in_slew_f + delta);
+        ArcDcalcResult dcalc_p = arc_delay_calc->gateDelay(drvr_pin, arc, in_slew_p,
+                                                           load_cap, parasitic,
+                                                           load_pin_index_map,
+                                                           scene, min_max);
+        float diff = (delayAsFloat(dcalc_p.gateDelay())
+                      - delayAsFloat(dcalc_result.gateDelay())) / delta;
+        size_t idx = arc->index() * graph_->apCount()
+                     + scene->dcalcAnalysisPtIndex(min_max);
+        graph_->ensureDelayDiffs(edge)[idx] = diff;
+      }
     }
     arc_delay_calc->finishDrvrPin();
   }
+
   return delay_changed;
 }
 

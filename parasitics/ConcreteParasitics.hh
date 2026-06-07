@@ -32,6 +32,10 @@
 #include "MinMax.hh"
 #include "Parasitics.hh"
 
+namespace lrf {
+class LocalParasitics;
+}
+
 namespace sta {
 
 class ConcreteParasitic;
@@ -201,6 +205,7 @@ protected:
   friend class ConcretePiElmore;
   friend class ConcreteParasiticNode;
   friend class ConcreteParasiticNetwork;
+  friend class lrf::LocalParasitics;
 };
 
 } // namespace sta

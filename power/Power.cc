@@ -1463,6 +1463,29 @@ public:
   float uncond_leakage{0.0};
 };
 
+// LRF: leakage of a single (inst, cell) candidate in a scene.
+float
+Power::leakagePower(const Instance *inst,
+                    LibertyCell *cell,
+                    const Scene *scene)
+{
+  PowerResult result;
+  ensureActivities(scene);
+  findLeakagePower(inst, cell, scene, result);
+  return result.leakage();
+}
+
+// LRF: top-`count` instances by total power. Wraps master highestInstPowers().
+InstanceSeq
+Power::highestPowerInstances(size_t count, const Scene *scene)
+{
+  InstanceSeq insts;
+  for (const InstPower &inst_pwr : highestInstPowers(count, scene)) {
+    insts.push_back(inst_pwr.first);
+  }
+  return insts;
+}
+
 void
 Power::findLeakagePower(const Instance *inst,
                         LibertyCell *cell,
