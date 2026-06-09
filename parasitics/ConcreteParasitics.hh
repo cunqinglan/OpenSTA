@@ -32,7 +32,9 @@
 #include "MinMax.hh"
 #include "Parasitics.hh"
 
-namespace lrf {
+
+// local graph ISTA (lgista) -- standalone timer extracted from lrf.
+namespace lgista {
 class LocalParasitics;
 }
 
@@ -205,7 +207,7 @@ protected:
   friend class ConcretePiElmore;
   friend class ConcreteParasiticNode;
   friend class ConcreteParasiticNetwork;
-  friend class lrf::LocalParasitics;
+  friend class lgista::LocalParasitics;
 };
 
 } // namespace sta
